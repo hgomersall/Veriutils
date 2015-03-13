@@ -1,0 +1,43 @@
+# Veriutils MyHDL Verification toolkit #
+
+Veriutils is a collection of utilities for verification of HDL designs 
+created using MyHDL.
+
+Likely the most useful tools are `myhdl_cosimulation` and 
+`vivado_cosimulation`. These are two functions with compatible signatures
+that run a cosimulation of a pair of MyHDL blocks. There are various
+supported features like auto generation of random input vectors, clocks and
+reset initialisation.
+
+Until more complete docs are available, I suggest looking at the test code
+for a full description of the capabilities and how to use it (the doc strings
+for each test describe well the behaviour tested by that test).
+
+In order to use Vivado, it is necessary to set up your environment. Under
+linux, this is something like:
+
+    source /opt/Xilinx/Vivado/2014.4/settings64.sh
+
+I imagine there's something similar under Windows (though I've not tested it).
+
+If the executable is not in the path, the relevant tests will be skipped, or
+if you try to use the Vivado cosimulation, an `EnvironmentError` will be 
+raised.
+
+Again, to use the Vivado capability, it is necessary to have a `settings.cfg`
+file in the current working directory. An example one is provided.
+
+Encrypted IP is supported. This is used by adding an attribute 
+`ip_dependencies` to the MyHDL device under test factory (much like one adds
+`vhdl_code` or `name` attributes). This should be a list of strings with each
+string being present in `settings.cfg` under the `[IP Paths]` section (and
+a suitable path to the `.xci` file given). See the example `settings.cfg`.
+
+If dependent vhdl files are necessary, they can be included (with a full
+path) in the `vhdl_dependencies` attribute in the test factory.
+
+The python package is not currently set up, I'm rather short of time, so bear
+with me (PRs gratefully received).
+
+The code is released under the BSD 3 clause license. See License.txt for the 
+text of this.
