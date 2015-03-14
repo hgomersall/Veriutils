@@ -13,6 +13,13 @@ Until more complete docs are available, I suggest looking at the test code
 for a full description of the capabilities and how to use it (the doc strings
 for each test describe well the behaviour tested by that test).
 
+It seems to be necessary to install with pip from a source distribution 
+(otherwise the source is not installed and so the code inspection breaks):
+
+    python setup.py sdist
+    cd dist
+    sudo pip install Veriutils-0.1.tar.gz
+
 In order to use Vivado, it is necessary to set up your environment. Under
 linux, this is something like:
 
