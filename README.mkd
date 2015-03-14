@@ -24,20 +24,21 @@ If the executable is not in the path, the relevant tests will be skipped, or
 if you try to use the Vivado cosimulation, an `EnvironmentError` will be 
 raised.
 
-Again, to use the Vivado capability, it is necessary to have a `settings.cfg`
+Again, to use the Vivado capability, it is necessary to have a `veriutils.cfg`
 file in the current working directory. An example one is provided.
 
 Encrypted IP is supported. This is used by adding an attribute 
 `ip_dependencies` to the MyHDL device under test factory (much like one adds
 `vhdl_code` or `name` attributes). This should be a list of strings with each
-string being present in `settings.cfg` under the `[IP Paths]` section (and
-a suitable path to the `.xci` file given). See the example `settings.cfg`.
+string being present in `veriutils.cfg` under the `[IP Paths]` section (and
+a suitable path to the `.xci` file given). See the example `veriutils.cfg`.
+
+Currently it is necessary to have the simulation template somewhere and
+referenced in `veriutils.cfg`. Just copying the one in `vivado/templates/` is
+probably enough.
 
 If dependent vhdl files are necessary, they can be included (with a full
 path) in the `vhdl_dependencies` attribute in the test factory.
-
-The python package is not currently set up, I'm rather short of time, so bear
-with me (PRs gratefully received).
 
 The code is released under the BSD 3 clause license. See License.txt for the 
 text of this.

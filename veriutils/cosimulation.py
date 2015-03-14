@@ -634,7 +634,7 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
     sim_object.cosimulate(_cycles)
 
     config = RawConfigParser()
-    config.read('settings.cfg')
+    config.read('veriutils.cfg')
 
     # Before we mess with toVHDL, remember what it was originally.
     toVHDL_name_state = toVHDL.name
