@@ -1,0 +1,13 @@
+[run]
+branch = True
+
+source = 
+    veriutils
+    tests
+
+[report]
+exclude_lines = 
+    if verbose:
+    if self._verbose:
+    pragma: no cover
+    if __debug__
