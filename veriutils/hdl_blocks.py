@@ -41,8 +41,12 @@ def clock_source(clock, period):
     even_period = period//2
     odd_period = period - even_period
 
+    start_val = int(clock.val)
+    not_start_val = int(not clock.val)
+
     @instance
     def _clockgen():
+
 
         while True:
             yield(delay(even_period))
@@ -53,15 +57,16 @@ def clock_source(clock, period):
     clock_source.vhdl_code = '''
 CLOCK_SOURCE_CLOCKGEN: process is
 begin
+$clock <= '%d';
 while True loop
     wait for $even_period ns;
-    $clock <= '1';
+    $clock <= '%d';
     wait for $odd_period ns;
-    $clock <= '0';
+    $clock <= '%d';
 end loop;
 wait;
 end process CLOCK_SOURCE_CLOCKGEN;
-'''
+''' % (start_val, not_start_val, start_val)
 
     clock.driven = True
 
@@ -269,11 +274,7 @@ def lut_signal_driver(signal, drive_lut, clock, edge_sensitivity='posedge'):
     can be either `posedge` for positive edge or `negedge` for negative edge.
     '''
 
-    if edge_sensitivity == 'posedge':
-        edge = clock.posedge
-    elif edge_sensitivity == 'negedge':
-        edge = clock.negedge
-    else:
+    if edge_sensitivity not in ('posedge', 'negedge'):
         raise ValueError('Invalid edge sensitivity')
 
     drive_lut = tuple(int(each) for each in drive_lut)
@@ -282,40 +283,31 @@ def lut_signal_driver(signal, drive_lut, clock, edge_sensitivity='posedge'):
         raise ValueError('Invalid zero length lut: The lut should not be '
                          'empty')
 
-    lut_idx_bits = floor(log(len(drive_lut), 2)) + 1
-    lut_idx = Signal(modbv(0, min=0, max=int(2**lut_idx_bits)))
-
     lut_length = len(drive_lut)
 
-    reset_posedge = ResetSignal(bool(0), active=1, async=True)
-    reset_negedge = ResetSignal(bool(0), active=1, async=True)
-    reset_signal = ResetSignal(bool(0), active=1, async=True)
+    if edge_sensitivity == 'posedge':
+        @instance
+        def lut_driver():
+            lut_idx = intbv(0, min=0, max=len(drive_lut))
+            while True:
+                signal.next = drive_lut[lut_idx]
+                yield clock.posedge
+                if lut_idx + 1 >= lut_length:
+                    lut_idx[:] = 0
+                else:
+                    lut_idx[:] = lut_idx + 1
 
-    @instance
-    def posedge_reset_driver():
-        reset_posedge.next = True
-        while True:
-            yield clock.posedge
-            reset_posedge.next = False
+    else:
+        @instance
+        def lut_driver():
+            lut_idx = intbv(0, min=0, max=len(drive_lut))
+            while True:
+                signal.next = drive_lut[lut_idx]
+                yield clock.negedge
+                if lut_idx + 1 >= lut_length:
+                    lut_idx[:] = 0
+                else:
+                    lut_idx[:] = lut_idx + 1
 
-    @instance
-    def negedge_reset_driver():
-        reset_negedge.next = True
-        while True:
-            yield clock.negedge
-            reset_negedge.next = False
 
-    @always_comb
-    def lut_reset_comb():
-        reset_signal.next = reset_posedge and reset_negedge
-
-    @always_seq(edge, reset_signal)
-    def lut_driver():
-        signal.next = drive_lut[lut_idx]
-        if lut_idx + 1 >= lut_length:
-            lut_idx.next = 0
-        else:
-            lut_idx.next = lut_idx + 1
-
-    return (lut_driver, posedge_reset_driver, negedge_reset_driver, 
-            lut_reset_comb)
+    return lut_driver

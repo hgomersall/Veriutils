@@ -1005,7 +1005,6 @@ class TestLutSignalDriver(TestCase):
         # is raised)
         test_output = test_output[:-2]
         test_output.reverse()
-        test_output += [0] # The first value is not defined yet.
 
         @always(self.clock.posedge)
         def output_check():
@@ -1032,7 +1031,6 @@ class TestLutSignalDriver(TestCase):
         test_output.reverse()
         # Repeat it a few times
         test_output = test_output + test_output + test_output
-        test_output += [0] # The first value is not defined yet.
 
         @always(self.clock.posedge)
         def output_check():
@@ -1112,29 +1110,35 @@ class TestLutSignalDriver(TestCase):
         # is raised)
         test_output = test_output[:-2]
         test_output.reverse()
-        test_output += [0] # The first value is not defined yet.
 
         @instance
         def output_check():
 
-            current_output = 0
-            # Nothing has happened yet...
+            next_transition = intbv(bool(0))
+            # Pop off the first value
+            current_output = test_output.pop()
+
+            # Then wait for the next clock edge
             yield(delay(self.clock_period//2))
             
             while True:
                 try:
-                    if self.clock.val:
-                        # The value should have changed                                
-                        current_output = test_output.pop()
+                    if next_transition: # a positive edge
                         self.assertEqual(current_output, 
                                          int(test_signal))
-                    else:
-                        # No change
+
+                        # The value should now change for the next cycle
+                        current_output = test_output.pop()
+                        
+                    else: # A negative edge
                         self.assertEqual(current_output,
                                          int(test_signal))
+                        # No change                        
 
                 except IndexError:
                     raise StopSimulation
+                
+                next_transition[:] = not next_transition
                 
                 # We assume an even clock period
                 yield delay(self.clock_period//2)
@@ -1168,30 +1172,33 @@ class TestLutSignalDriver(TestCase):
         test_output = test_output[:-2]
         test_output.reverse()
 
-        # Add 0 to the end to cope with the initial reset
-        test_output.append(0)
-
         @instance
         def output_check():
 
-            current_output = 0
-            # Nothing has happened yet...
+            next_transition = intbv(bool(0))
+            # Pop off the first value
+            current_output = test_output.pop()
+
+            # Then wait for the next clock edge
             yield(delay(self.clock_period//2))
             
             while True:
                 try:
-                    if self.clock.val:
-                        # No change
+                    if next_transition: # a positive edge
                         self.assertEqual(current_output, 
                                          int(test_signal))
-                    else:
-                        # Value changed
-                        current_output = test_output.pop()
+                        # No change
+                    else: # A negative edge
                         self.assertEqual(current_output,
                                          int(test_signal))
+                        
+                        # The value should now change for the next cycle
+                        current_output = test_output.pop()
 
                 except IndexError:
                     raise StopSimulation
+                
+                next_transition[:] = not next_transition
                 
                 # We assume an even clock period
                 yield delay(self.clock_period//2)

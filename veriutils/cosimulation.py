@@ -477,8 +477,12 @@ class SynchronousTest(object):
                 flattened_dut_args[each_signal_name] = clock
 
             elif flattened_arg_types[each_signal_name] == 'init_reset':
-                instances.append(init_reset_source(reset, clock))
+                # This should be played back                
+                drive_list = tuple(flattened_ref_outputs[each_signal_name])
+                instances.append(lut_signal_driver(reset, drive_list, clock))
                 flattened_dut_args[each_signal_name] = reset
+                #instances.append(init_reset_source(reset, clock))
+                #flattened_dut_args[each_signal_name] = reset
 
             elif flattened_arg_types[each_signal_name] == 'output':
                 # We need to record it
@@ -612,6 +616,13 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
     Vivado.
 
     This function has exactly the same interface as myhdl_cosimulation.
+
+    The outputs should be identical to from myhdl_cosimulation except for
+    one important caveat: until values are initialised explicitly, they 
+    are recorded as undefined. Undefined values are set to None in the output.
+
+    This is particularly noticeable in the case when an asynchronous reset
+    is used. Care should be taken to handle the outputs appropriately.
     '''
 
     from distutils import spawn
@@ -760,10 +771,6 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
                     
                 each_dut_outputs.append(each_value)
                 
-            # We strip out the first signal, as the one sample delay between
-            # reading and writing means this is necessarily undefined.
-            _each_dut_outputs = each_dut_outputs[1:]
-            
             output_name_list = each_signal.split('.')
 
             if len(output_name_list) > 1:
@@ -773,10 +780,10 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
                 # FIXME Only one level of interface supported
                 interface_outputs.setdefault(
                     output_name_list[0], {})[output_name_list[1]] = (
-                        _each_dut_outputs)
+                        each_dut_outputs)
             else:
                 # We have a normal signal
-                dut_outputs[each_signal] = _each_dut_outputs
+                dut_outputs[each_signal] = each_dut_outputs
 
         for each_interface in interface_outputs:
 

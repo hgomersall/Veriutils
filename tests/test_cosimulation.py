@@ -193,55 +193,6 @@ class CosimulationTestMixin(object):
         self.assertEqual(test_input[:-1], ref_results['reset'][1:])
         self.assertEqual(test_input[:-1], dut_results['reset'][1:])
 
-    def test_ref_uses_original_output(self):
-        '''It should be the ref_factory that gets the original output signal.
-
-        This is important as it allows the output signal to be used by a
-        custom source, and it is the reference that is used.
-        '''
-        def useless_factory(test_input, output, reset, clock):
-            @always_seq(clock.posedge, reset=reset)
-            def useless():
-                # Include test_input to stop complaints about undriven signal
-                output.next = 0 * test_input
-
-            return useless
-
-        mod_max = 20
-        def _custom_source(test_input, output, reset, clock):
-            @always_seq(clock.posedge, reset=reset)
-            def custom():
-                # Adds one to the output signal
-                test_input.next = output + 1
-
-            return custom
-
-        custom_source = _custom_source(self.default_args['test_input'],
-                                       self.default_args['output'],
-                                       self.default_args['reset'],
-                                       self.default_args['clock'])
-
-        sim_cycles = 20
-        dut_results, ref_results = self.construct_and_simulate(
-            sim_cycles, useless_factory, self.identity_factory, 
-            self.default_args, 
-            {'test_input': 'custom', 'output': 'output',
-             'reset': 'init_reset', 'clock': 'clock'}, 
-            custom_sources=[custom_source])
-
-        test_dut_output = [0] * sim_cycles
-        assert sim_cycles % 2 == 0 # the following works for even sim_cycles.
-
-        # Make sure we add the reset cycles 
-        test_ref_output = [0] * self.reset_cycles + list(
-            chain.from_iterable((i, i) for i in range(sim_cycles//2)))
-
-        # Then truncate it suitably
-        test_ref_output = test_ref_output[:sim_cycles]
-
-        self.assertEqual(test_ref_output, ref_results['output'])
-        self.assertEqual(test_dut_output, dut_results['output'])
-
     def test_all_argument_types_and_args_have_same_keys(self):
         '''The arg dict should have the same keys as the arg types dict
         '''
@@ -641,8 +592,57 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
             toVHDL.directory = toVHDL_directory_state
             shutil.rmtree(tmp_dir)
 
+    def test_ref_uses_original_output(self):
+        '''It should be the ref_factory that gets the original output signal.
 
-class TestCosimulationFunction(TestSynchronousTestClass):
+        This is important as it allows the output signal to be used by a
+        custom source, and it is the reference that is used.
+        '''
+        def useless_factory(test_input, output, reset, clock):
+            @always_seq(clock.posedge, reset=reset)
+            def useless():
+                # Include test_input to stop complaints about undriven signal
+                output.next = 0 * test_input
+
+            return useless
+
+        mod_max = 20
+        def _custom_source(test_input, output, reset, clock):
+            @always_seq(clock.posedge, reset=reset)
+            def custom():
+                # Adds one to the output signal
+                test_input.next = output + 1
+
+            return custom
+
+        custom_source = _custom_source(self.default_args['test_input'],
+                                       self.default_args['output'],
+                                       self.default_args['reset'],
+                                       self.default_args['clock'])
+
+        sim_cycles = 20
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, useless_factory, self.identity_factory, 
+            self.default_args, 
+            {'test_input': 'custom', 'output': 'output',
+             'reset': 'init_reset', 'clock': 'clock'}, 
+            custom_sources=[custom_source])
+
+        test_dut_output = [0] * sim_cycles
+        assert sim_cycles % 2 == 0 # the following works for even sim_cycles.
+
+        # Make sure we add the reset cycles 
+        test_ref_output = [0] * self.reset_cycles + list(
+            chain.from_iterable((i, i) for i in range(sim_cycles//2)))
+
+        # Then truncate it suitably
+        test_ref_output = test_ref_output[:sim_cycles]
+
+        self.assertEqual(test_ref_output, ref_results['output'])
+        self.assertEqual(test_dut_output, dut_results['output'])
+
+
+class TestCosimulationFunction(CosimulationTestMixin, TestCase):
     '''In order to simplify the process of running a cosimulation, as well
     as providing a common interface for different types of cosimulation, 
     there should be a helper function that wraps a SynchronousTest object and
@@ -656,8 +656,27 @@ class TestCosimulationFunction(TestSynchronousTestClass):
         return myhdl_cosimulation(
             sim_cycles, dut_factory, ref_factory, args, arg_types, **kwargs)
 
+    def test_dut_factory_is_None(self):
+        '''It should be possible to pass None as the dut factory.
 
-_vivado_executable = spawn.find_executable('vivado')
+        In order that it is possible to generate a set of correct reference
+        signals without a device to test, it should be possible to set the
+        dut factory to None.
+
+        In such a case, the reference should be simulated as expected, but on
+        simulation, there should be no result from the dut case 
+        (instead, None should returned).
+        '''
+        sim_cycles = 20
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, None, self.identity_factory, self.default_args, 
+            {'test_input': 'custom', 'output': 'output',
+             'reset': 'init_reset', 'clock': 'clock'})
+
+        self.assertIs(dut_results, None)
+
+
+vivado_executable = spawn.find_executable('vivado')
 
 def _broken_factory(test_input, output, reset, clock):
     
@@ -685,13 +704,23 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
         self, sim_cycles, dut_factory, ref_factory, args, arg_types, 
         **kwargs):
         
-        if _vivado_executable is None:
+        if vivado_executable is None:
             raise unittest.SkipTest('Vivado executable not in path')
 
-        return vivado_cosimulation(
+        dut_outputs, ref_outputs = vivado_cosimulation(
             sim_cycles, dut_factory, ref_factory, args, arg_types, **kwargs)
 
-    @unittest.skipIf(_vivado_executable is None,
+        # We've used an asynchronous reset, so the output will be undefined
+        # at the first clock edge. Therefore we prune the first sample from
+        # the outputs.
+        for each_signal in arg_types:
+            if arg_types[each_signal] == 'output':
+                dut_outputs[each_signal] = dut_outputs[each_signal][1:]
+                ref_outputs[each_signal] = ref_outputs[each_signal][1:]
+
+        return dut_outputs, ref_outputs
+
+    @unittest.skipIf(vivado_executable is None,
                      'Vivado executable not in path')
     def test_vivado_VHDL_error_raises(self):
         '''Errors with VHDL code in Vivado should raise a RuntimeError.
