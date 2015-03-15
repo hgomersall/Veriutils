@@ -103,6 +103,10 @@ def DSP48E1(A, B, C, P, opmode, clock_enable, reset, clock):
                 raise ValueError('Unsupported Y opmode: %d', opmode_Y)
             pass
 
+    @always_comb
+    def set_P():
+        P.next = P_register
+
     @always_seq(clock.posedge, reset=reset)
     def _dsp48e1_block():
 
@@ -144,8 +148,31 @@ def DSP48E1(A, B, C, P, opmode, clock_enable, reset, clock):
 
         P_register.next = X_output + Y_output + Z_output
 
-        P.next = P_register
+    DSP48E1.ip_dependencies = ['xbip_dsp48_macro_0']
+
+    A.read = True
+    B.read = True
+    C.read = True    
+    P.driven = True
+    opmode.read = True
+    clock_enable.read = True
+    clock.read = True
+    reset.read = True
+
+    DSP48E1.vhdl_code = '''
+dsp48_wrapper: entity work.DSP48E1(MyHDL)
+port map (
+    A=>A,
+    B=>B,
+    C=>C,
+    P=>P,
+    opmode=>opmode,
+    clock_enable=>clock_enable,
+    reset=>reset,
+    clock=>clock
+);
+'''
 
     return (_dsp48e1_block, opmode_pipeline, 
-            set_opmode_X, set_opmode_Y, set_opmode_Z)
+            set_opmode_X, set_opmode_Y, set_opmode_Z, set_P)
 

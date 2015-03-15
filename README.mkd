@@ -39,12 +39,14 @@ Encrypted IP is supported. This is used by adding an attribute
 `vhdl_code` or `name` attributes). This should be a list of strings with each
 string being present in `veriutils.cfg` under the `[IP Paths]` section (and
 a suitable path to the `.xci` file given). See the example `veriutils.cfg`.
+See the dsp48e1 example in the `examples` directory for a complete 
+demonstration of its usage. This uses the example `veriutils.cfg` file.
 
 Currently it is necessary to have the simulation template somewhere and
 referenced in `veriutils.cfg`. Just copying the one in `vivado/templates/` is
 probably enough.
 
-If dependent vhdl files are necessary, they can be included (with a full
+If additional vhdl files are necessary, they can be included (with a full
 path) in the `vhdl_dependencies` attribute in the test factory.
 
 The code is released under the BSD 3 clause license. See License.txt for the 

@@ -671,11 +671,20 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
 
         xci_file_list = [
             config.get('IP paths', each_ip) for each_ip in ip_dependencies]
+
+        ip_additional_vhdl_files = []
+
+        for each_ip in ip_dependencies:
+            if config.has_option('IP additional files', each_ip):
+                ip_additional_vhdl_files += [
+                    each.strip() for each in 
+                    config.get('IP additional files', each_ip).split()]
         
         vhdl_dut_files = [os.path.join(tmp_dir, 'dut_convertible_top.vhd'),
                           os.path.join(tmp_dir, myhdl_vhdl_package_filename)]
 
-        vhdl_files = vhdl_dependencies + vhdl_dut_files
+        vhdl_files = (
+            vhdl_dependencies + vhdl_dut_files + ip_additional_vhdl_files)
 
         xci_files_string = ' '.join(xci_file_list)
         vhdl_files_string = ' '.join(vhdl_files)

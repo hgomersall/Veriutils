@@ -1,7 +1,11 @@
 
+import unittest
 from tests.base_hdl_test import HDLTestCase, get_signed_intbv_rand_signal
 from myhdl import (intbv, enum, Signal, ResetSignal, instance,
                    delay, always, always_seq, Simulation, StopSimulation)
+
+# FIXME the vivado_executable check should be part of the API
+from tests.test_cosimulation import vivado_executable
 
 from random import randrange
 import random
@@ -11,7 +15,7 @@ from collections import deque
 from .dsp48e1 import (
     DSP48E1, OPMODE_MULTIPLY, OPMODE_MULTIPLY_ADD, OPMODE_MULTIPLY_ACCUMULATE)
 
-from veriutils import myhdl_cosimulation, copy_signal
+from veriutils import myhdl_cosimulation, vivado_cosimulation, copy_signal
 
 PERIOD = 10
 
@@ -39,8 +43,8 @@ class DSP48E1TestCase(HDLTestCase):
         # Reduce the range of C, but not enough to reduce its bitwidth
         self.c_min = int(_c_min * 0.6)
         self.c_max = int(_c_max * 0.6)
-        self.C = Signal(intbv(int(initial_C.val * 0.6),
-                              min=self.c_min, max=self.c_max))
+        self.C = Signal(intbv(0, min=self.c_min, max=self.c_max))
+        self.C.val[:] = int(initial_C.val * 0.6)
 
         self.P, self.p_min, self.p_max = (
             get_signed_intbv_rand_signal(self.len_P))
@@ -172,11 +176,11 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         dut_outputs, ref_outputs = self.cosimulate(
             cycles, DSP48E1, ref, args, arg_types)
 
-        # There are pipeline_registers + 1 cycles latency on the output. 
+        # There are pipeline_registers cycles latency on the output. 
         # The reference above has only 1 cycle latency, so we need to offset 
-        # the results by pipeline_registers cycles.
-        self.assertEqual(dut_outputs['P'][self.pipeline_registers:], 
-                         ref_outputs['P'][:-self.pipeline_registers])
+        # the results by pipeline_registers - 1 cycles.
+        self.assertEqual(dut_outputs['P'][self.pipeline_registers - 1:], 
+                         ref_outputs['P'][:-(self.pipeline_registers - 1)])
 
     def test_multiply_add(self):
         '''There should be a multiply-add mode, giving C + A * B
@@ -206,11 +210,12 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         dut_outputs, ref_outputs = self.cosimulate(
             cycles, DSP48E1, ref, args, arg_types)
 
-        # There are pipeline_registers + 1 cycles latency on the output. 
+        # There are pipeline_registers cycles latency on the output. 
         # The reference above has only 1 cycle latency, so we need to offset 
-        # the results by pipeline_registers cycles.
-        self.assertEqual(dut_outputs['P'][self.pipeline_registers:], 
-                         ref_outputs['P'][:-self.pipeline_registers])
+        # the results by pipeline_registers - 1 cycles.
+        self.assertEqual(dut_outputs['P'][self.pipeline_registers - 1:], 
+                         ref_outputs['P'][:-(self.pipeline_registers - 1)])
+
 
     def test_multiply_accumulate(self):
         '''There should be a multiply-accumulate mode, giving P + A * B.
@@ -243,11 +248,11 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         dut_outputs, ref_outputs = self.cosimulate(
             cycles, DSP48E1, ref, args, arg_types)
 
-        # There are pipeline_registers + 1 cycles latency on the output. 
+        # There are pipeline_registers cycles latency on the output. 
         # The reference above has only 1 cycle latency, so we need to offset 
-        # the results by pipeline_registers cycles.
-        self.assertEqual(dut_outputs['P'][self.pipeline_registers:], 
-                         ref_outputs['P'][:-self.pipeline_registers])
+        # the results by pipeline_registers - 1 cycles.
+        self.assertEqual(dut_outputs['P'][self.pipeline_registers - 1:], 
+                         ref_outputs['P'][:-(self.pipeline_registers - 1)])
 
     def test_changing_modes(self):
         '''It should be possible to change modes dynamically.
@@ -292,14 +297,17 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
             clock = kwargs['clock']
             reset = kwargs['reset']
 
+            # Each pipeline should be pipeline_registers - 1 long since
+            # there is one implicit register.
             A_pipeline = deque(
-                [copy_signal(A) for _ in range(self.pipeline_registers)])
+                [copy_signal(A) for _ in range(self.pipeline_registers - 1)])
             B_pipeline = deque(
-                [copy_signal(B) for _ in range(self.pipeline_registers)])
+                [copy_signal(B) for _ in range(self.pipeline_registers - 1)])
             C_pipeline = deque(
-                [copy_signal(C) for _ in range(self.pipeline_registers)])
+                [copy_signal(C) for _ in range(self.pipeline_registers - 1)])
             opmode_pipeline = deque(
-                [copy_signal(opmode) for _ in range(self.pipeline_registers)])
+                [copy_signal(opmode) for _ in 
+                 range(self.pipeline_registers - 1)])
 
             @always(clock.posedge)
             def test_arbitrary_pipeline():
@@ -351,9 +359,16 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
             custom_sources=custom_sources)
         
         self.assertEqual(dut_outputs['reset'], ref_outputs['reset'])
-
-        # There are three cycles latency on the output. The reference
-        # above has only 1 cycle latency, so we need to offset the 
-        # results by 2 cycles.
         self.assertEqual(dut_outputs['P'], ref_outputs['P'])
 
+@unittest.skipIf(vivado_executable is None, 'Vivado executable not in path')
+class TestDSP48E1VivadoSimulation(TestDSP48E1Simulation):
+    '''The tests of TestDSP48E1Simulation should run under the Vivado 
+    simulator.
+    '''
+
+    def cosimulate(self, sim_cycles, dut_factory, ref_factory, args, 
+                   arg_types, **kwargs):
+
+        return vivado_cosimulation(sim_cycles, dut_factory, ref_factory, 
+                                   args, arg_types, **kwargs)
