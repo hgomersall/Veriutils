@@ -15,7 +15,8 @@ import tempfile
 import shutil
 
 import mock
-from distutils import spawn
+
+from veriutils import VIVADO_EXECUTABLE
 
 from veriutils import (SynchronousTest, myhdl_cosimulation,
                        vivado_cosimulation)
@@ -676,8 +677,6 @@ class TestCosimulationFunction(CosimulationTestMixin, TestCase):
         self.assertIs(dut_results, None)
 
 
-vivado_executable = spawn.find_executable('vivado')
-
 def _broken_factory(test_input, output, reset, clock):
     
     @always_seq(clock.posedge, reset=reset)
@@ -704,7 +703,7 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
         self, sim_cycles, dut_factory, ref_factory, args, arg_types, 
         **kwargs):
         
-        if vivado_executable is None:
+        if VIVADO_EXECUTABLE is None:
             raise unittest.SkipTest('Vivado executable not in path')
 
         dut_outputs, ref_outputs = vivado_cosimulation(
@@ -720,7 +719,7 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
 
         return dut_outputs, ref_outputs
 
-    @unittest.skipIf(vivado_executable is None,
+    @unittest.skipIf(VIVADO_EXECUTABLE is None,
                      'Vivado executable not in path')
     def test_vivado_VHDL_error_raises(self):
         '''Errors with VHDL code in Vivado should raise a RuntimeError.
@@ -740,6 +739,9 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
         sim_cycles = 30
 
         existing_PATH = os.environ['PATH']
+        import veriutils
+        existing_VIVADO_EXECUTABLE = veriutils.VIVADO_EXECUTABLE
+        veriutils.cosimulation.VIVADO_EXECUTABLE = None
         try:
             os.environ['PATH'] = ''
             self.assertRaisesRegex(
@@ -750,6 +752,36 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
 
         finally:
             os.environ['PATH'] = existing_PATH
+            veriutils.cosimulation.VIVADO_EXECUTABLE = (
+                existing_VIVADO_EXECUTABLE)
+
+    def test_missing_vhdl_file_raises(self):
+        '''An EnvironmentError should be raised for a missing VHDL file.
+
+        If the settings stipulate an VHDL file should be included, but it 
+        is not there, an EnvironmentError should be raised.
+        '''
+
+        self.identity_factory.ip_dependencies = ['some_other_ip']
+        sim_cycles = 10
+        self.assertRaisesRegex(
+            EnvironmentError, 'An expected xci IP file is missing', 
+            vivado_cosimulation, sim_cycles, self.identity_factory, 
+            self.identity_factory, self.default_args, self.default_arg_types)
+
+    def test_missing_xci_file_raises(self):
+        '''An EnvironmentError should be raised for a missing xci IP file.
+
+        If the settings stipulate an xci file should be included, but it 
+        is not there, an EnvironmentError should be raised.
+        '''
+
+        self.identity_factory.vhdl_dependencies = ['a_missing_file.vhd']
+        sim_cycles = 10
+        self.assertRaisesRegex(
+            EnvironmentError, 'An expected vhdl file is missing', 
+            vivado_cosimulation, sim_cycles, self.identity_factory, 
+            self.identity_factory, self.default_args, self.default_arg_types)
 
     def test_interface_case(self):
         '''It should be possible to work with interfaces'''
@@ -769,7 +801,7 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
                 self.d = Signal(bool(0))
 
         def identity_factory(test_input, output, reset, clock):
-            @always_seq(clock.posedge, reset=reset)
+            @always_seq(cloclk.posedge, reset=reset)
             def identity():
                 output.a.next = test_input.a
                 output.b.next = test_input.b

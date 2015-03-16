@@ -4,8 +4,7 @@ from tests.base_hdl_test import HDLTestCase, get_signed_intbv_rand_signal
 from myhdl import (intbv, enum, Signal, ResetSignal, instance,
                    delay, always, always_seq, Simulation, StopSimulation)
 
-# FIXME the vivado_executable check should be part of the API
-from tests.test_cosimulation import vivado_executable
+from veriutils import VIVADO_EXECUTABLE
 
 from random import randrange
 import random
@@ -361,7 +360,7 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         self.assertEqual(dut_outputs['reset'], ref_outputs['reset'])
         self.assertEqual(dut_outputs['P'], ref_outputs['P'])
 
-@unittest.skipIf(vivado_executable is None, 'Vivado executable not in path')
+@unittest.skipIf(VIVADO_EXECUTABLE is None, 'Vivado executable not in path')
 class TestDSP48E1VivadoSimulation(TestDSP48E1Simulation):
     '''The tests of TestDSP48E1Simulation should run under the Vivado 
     simulator.

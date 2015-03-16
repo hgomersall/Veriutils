@@ -1,4 +1,5 @@
 from .hdl_blocks import *
+from . import VIVADO_EXECUTABLE
 
 from myhdl import * 
 
@@ -625,10 +626,7 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
     is used. Care should be taken to handle the outputs appropriately.
     '''
 
-    from distutils import spawn
-    vivado_executable = spawn.find_executable('vivado')
-
-    if vivado_executable is None:
+    if VIVADO_EXECUTABLE is None:
         raise EnvironmentError('Vivado executable not in path')
 
     sim_object = SynchronousTest(dut_factory, ref_factory, args, arg_types, 
@@ -686,6 +684,12 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
         vhdl_files = (
             vhdl_dependencies + vhdl_dut_files + ip_additional_vhdl_files)
 
+        for each_xci_file in xci_file_list:
+            # The files should all now exist
+            if not os.path.exists(each_xci_file):
+                raise EnvironmentError('An expected xci IP file is missing: '
+                                       '%s' % (each_xci_file))
+
         xci_files_string = ' '.join(xci_file_list)
         vhdl_files_string = ' '.join(vhdl_files)
 
@@ -721,14 +725,31 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
         signal_output_filename = os.path.join(tmp_dir, 'signal_outputs')
         toVHDL(sim_object.dut_convertible_top, signal_output_filename)
 
+        for each_vhdl_file in vhdl_files:
+            # The files should all now exist
+            if not os.path.exists(each_vhdl_file):
+                raise EnvironmentError('An expected vhdl file is missing: %s'
+                                       % (each_vhdl_file))
+
         vivado_process = subprocess.Popen(
-            [vivado_executable, '-nolog', '-nojournal', '-mode', 'batch', 
+            [VIVADO_EXECUTABLE, '-nolog', '-nojournal', '-mode', 'batch', 
              '-source', simulate_script_filename], stdin=subprocess.PIPE, 
             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         out, err = vivado_process.communicate()
 
         if err != '':
+
+            xvhdl_log_filename = os.path.join(
+                tmp_dir, 'tmp_project', 'tmp_project.sim', 'sim_1', 'behav', 
+                'xvhdl.log')
+
+            if xvhdl_log_filename in err:
+                with open(xvhdl_log_filename, 'r') as log_file:
+                    err += '\n'
+                    err += 'xvhdl.log:\n'
+                    err += log_file.read()
+
             raise RuntimeError(
                 'Error running the Vivado simulator:\n%s' % err)
 
