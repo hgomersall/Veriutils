@@ -199,7 +199,7 @@ class SynchronousTest(object):
         * `'output'` args are simply recorded, but are duplicated for the 
         dut_factory. This means the dut_factory and the ref_factory can 
         output different values. Note, this also means that if a custom_source
-        takes an output as one of it's signals, it is the output that 
+        takes an output as one of its signals, it is the output that 
         corresponds to that being driven by the instance from `ref_factory`
         (i.e. the reference).
         * A `'custom'` arg is assumed to be handled elsewhere (say, as a 
