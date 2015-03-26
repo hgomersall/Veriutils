@@ -14,6 +14,14 @@ __all__ = ['random_source', 'clock_source', 'init_reset_source',
 
 def copy_signal(signal_obj):
     
+    if isinstance(signal_obj, ResetSignal):
+        new_signal = ResetSignal(copy.copy(signal_obj._init), 
+                                 active=signal_obj.active,
+                                 async=signal_obj.async)
+
+        new_signal._val = copy.copy(signal_obj.val)
+        return new_signal
+
     if isinstance(signal_obj, myhdl._Signal._Signal):
         new_signal = Signal(copy.copy(signal_obj._init))
         new_signal._val = copy.copy(signal_obj.val)

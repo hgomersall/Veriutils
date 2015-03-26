@@ -2,6 +2,7 @@
 from .base_hdl_test import HDLTestCase, TestCase
 from veriutils import *
 from myhdl import *
+import myhdl
 
 import copy
 from random import randrange
@@ -90,6 +91,29 @@ class TestSignalCopy(TestCase):
         
         self.assertIsNot(interface_a.a.val, interface_b.a.val)
         self.assertIsNot(interface_a.b.val, interface_b.b.val)
+
+    def test_reset_signal_copy(self):
+        '''It should be possible to copy reset signals.
+
+        The copied signal should have the same attributes as the original.
+        '''
+        test_cases = ((0, False, False),
+                      (False, True, False),
+                      (1, True, True),
+                      (True, False, False))
+
+        for init, active, async in test_cases:
+            a = ResetSignal(0, active=False, async=False)
+            b = copy_signal(a)
+            self.assertTrue(isinstance(b, ResetSignal))
+            self.assertEqual(a, b)
+            self.assertIsNot(a, b)
+
+            if not isinstance(a.val, bool):
+                self.assertIsNot(a.val, b.val)
+
+            self.assertEqual(a.active, b.active)
+            self.assertEqual(a.async, b.async)
 
 
 class TestClockSource(TestCase):

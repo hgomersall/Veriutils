@@ -755,6 +755,8 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
             veriutils.cosimulation.VIVADO_EXECUTABLE = (
                 existing_VIVADO_EXECUTABLE)
 
+    @unittest.skipIf(VIVADO_EXECUTABLE is None,
+                     'Vivado executable not in path')
     def test_missing_vhdl_file_raises(self):
         '''An EnvironmentError should be raised for a missing VHDL file.
 
@@ -768,7 +770,9 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
             EnvironmentError, 'An expected xci IP file is missing', 
             vivado_cosimulation, sim_cycles, self.identity_factory, 
             self.identity_factory, self.default_args, self.default_arg_types)
-
+    
+    @unittest.skipIf(VIVADO_EXECUTABLE is None,
+                     'Vivado executable not in path')
     def test_missing_xci_file_raises(self):
         '''An EnvironmentError should be raised for a missing xci IP file.
 
@@ -801,7 +805,7 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
                 self.d = Signal(bool(0))
 
         def identity_factory(test_input, output, reset, clock):
-            @always_seq(cloclk.posedge, reset=reset)
+            @always_seq(clock.posedge, reset=reset)
             def identity():
                 output.a.next = test_input.a
                 output.b.next = test_input.b
