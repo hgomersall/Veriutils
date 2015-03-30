@@ -717,7 +717,6 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
         with open(simulate_script_filename, 'w') as simulate_script_file:
             simulate_script_file.write(simulate_script)
         
-
         # Generate the output VHDL files
         toVHDL.name = None
         toVHDL.directory = tmp_dir
