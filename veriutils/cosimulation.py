@@ -23,6 +23,12 @@ except ImportError:
     # Python 3
     from configparser import RawConfigParser
 
+import sys
+PY3 = sys.version_info[0]
+if PY3:
+    string_type = str
+else:
+    string_type = basestring
 
 __all__ = ['SynchronousTest', 'myhdl_cosimulation', 'vivado_cosimulation']
 
@@ -117,16 +123,23 @@ def _expand_to_signal_list(signal_obj, depth=0):
     else:
         signal_list = []
         attribute_name_list = []
-        for each in signal_obj.__dict__:
-            each_signal_list, each_attr_name_list = _expand_to_signal_list(
-                getattr(signal_obj, each), depth=depth+1)
 
-            if each_signal_list == []:
-                # Not a signal returned, and recursion limit reached.
-                break
+        try:
+            for each in signal_obj.__dict__:
+                each_signal_list, each_attr_name_list = (
+                    _expand_to_signal_list(
+                        getattr(signal_obj, each), depth=depth+1))
 
-            signal_list += each_signal_list
-            attribute_name_list += [(each, each_attr_name_list)]
+                if each_signal_list == []:
+                    # Not a signal returned, and recursion limit reached.
+                    break
+
+                signal_list += each_signal_list
+                attribute_name_list += [(each, each_attr_name_list)]
+                
+        except AttributeError:
+            # A non-signal, non-interface
+            return [], []
 
         return signal_list, attribute_name_list
 
@@ -144,6 +157,29 @@ def _turn_signal_hierarchy_into_name(hierarchy):
         return (this_level_name + '.' + 
                 _turn_signal_hierarchy_into_name(next_hierarchy))
 
+def _types_from_signal_hierarchy(hierarchy, types):
+    '''For every entry in the hierarchy, find the corresponding types.
+
+    This might propagate down the hierarchy from a string, or be a dict.
+    '''
+
+    if len(hierarchy) == 0:
+        _types = [types]
+
+    else:
+        _types = []
+        for name, next_hierarchy in hierarchy:
+            if isinstance(types, string_type):
+                _types.append((name, _types_from_signal_hierarchy(
+                    next_hierarchy, types)))
+            
+            else:
+                _types.append(
+                    (name, _types_from_signal_hierarchy(
+                        next_hierarchy, types[name])))
+
+    return _types
+
 def _single_signal_assigner(input_signal, output_signal):
     
     @always_comb
@@ -155,7 +191,7 @@ def _single_signal_assigner(input_signal, output_signal):
 def _deinterfacer(interface, assignment_dict):
     
     assigner_blocks = []
-    for attr_name in interface.__dict__:
+    for attr_name in assignment_dict:
         locals()['input_' + attr_name] = getattr(interface, attr_name)
         locals()['output_' + attr_name] = assignment_dict[attr_name]
         
@@ -206,6 +242,10 @@ class SynchronousTest(object):
         constant or handled through a custom_source).
         * `'custom_reset'` is like a `'custom'` arg, but for reset signals.
 
+        If an argument is an interface type, then a dict of the above can be
+        used. That is, each attribute in the interface can be a key in a 
+        dict that points to a string from the above list.
+
         ``period`` sets the clock period.
 
         ``custom_sources`` is a list of sources that are simply appended
@@ -228,10 +268,48 @@ class SynchronousTest(object):
                              'The argument dict and the argument type dict '
                              'should have all the same keys.')
 
-        if not set(arg_types.values()).issubset(set(valid_arg_types)):
-            raise ValueError('Invalid argument or argument types: '
-                             'The argument type dict should only contain '
-                             'valid argument types')
+        flattened_types = []
+        flattened_signals = []
+
+        def _arg_checker(signal_collection, types, depth=0):
+
+            if not isinstance(signal_collection, dict):
+                # Use the __dict__ attribute of the object
+                signal_objs = signal_collection.__dict__
+            else:
+                signal_objs = signal_collection
+
+            for name in types:
+                if (isinstance(signal_objs[name], myhdl._Signal._Signal) and
+                    types[name] not in valid_arg_types):
+
+                    raise ValueError('Invalid argument or argument types:' 
+                                     ' All the signals in the hierarchy '
+                                     'should be one of type: %s' % 
+                                     (', '.join(valid_arg_types),))
+
+                elif not isinstance(signal_objs[name], myhdl._Signal._Signal):
+
+                    if types[name] in valid_arg_types:
+                        # This is ok (we can assign a hierarchy to be of 
+                        # one type
+                        flattened_types.append(types[name])
+                        flattened_signals.append(signal_objs[name])
+
+                    else:
+                        try:
+                            _arg_checker(signal_objs[name], types[name])
+                        except KeyError:
+                            raise KeyError('Arg type dict references a '
+                                           'non-existant signal')
+
+                else:
+                    
+                    flattened_types.append(types[name])
+                    flattened_signals.append(signal_objs[name])
+
+
+        _arg_checker(args, arg_types)
 
         if 'clock' not in arg_types.values():
             raise ValueError('Missing clock: There should be a single '
@@ -272,14 +350,11 @@ class SynchronousTest(object):
             self.init_reset = ()
 
         # Deal with random values
-        # Get the indices first
-        random_args = [
-            key for key in arg_types if arg_types[key] == 'random']
-
-        # Now create the random sources.
+        # Create the random sources.
         self.random_sources = [
-            random_source(args[arg], self.clock, self.reset)
-            for arg in random_args]
+            random_source(each_signal, self.clock, self.reset) 
+            for each_signal, each_type in 
+            zip(flattened_signals, flattened_types) if each_type == 'random']
 
         if custom_sources is None:
             custom_sources = []
@@ -287,14 +362,43 @@ class SynchronousTest(object):
         self.custom_sources = custom_sources
 
         # Now sort out the arguments - the outputs should be replicated
-        self.dut_args = copy.copy(args)
         self.ref_args = args
 
-        output_args = [
-            key for key in arg_types if arg_types[key] == 'output']
+        def _replicate_signals(signal_collection, types, depth=0):
 
-        for output_arg in output_args:
-            self.dut_args[output_arg] = copy_signal(args[output_arg])
+            if not isinstance(signal_collection, dict):
+                # Use the __dict__ attribute of the object
+                signal_dict = signal_collection.__dict__
+                is_dict = False
+            else:
+                signal_dict = signal_collection
+                is_dict = True
+
+            output_dict = signal_dict.copy()
+
+            for name in types:
+                if types[name] == 'output':
+                    output_dict[name] = copy_signal(signal_dict[name])
+
+                elif types[name] in valid_arg_types:
+                    # We don't want to copy
+                    continue
+
+                else:
+                    # We have an interface, so recurse
+                    output_dict[name] = _replicate_signals(
+                        signal_dict[name], types[name])
+
+            if is_dict:
+                output = output_dict
+            else:
+                output = copy.copy(signal_collection)
+                for name in types:
+                    setattr(output, name, output_dict[name])
+
+            return output
+
+        self.dut_args = _replicate_signals(self.ref_args, arg_types)
 
         # Now create the recorder sinks for every signal
         ref_outputs = {}
@@ -394,14 +498,19 @@ class SynchronousTest(object):
             _signal_list, attribute_name_list = (
                 _expand_to_signal_list(each_signal_obj))
 
+            hierarchy_types = _types_from_signal_hierarchy(
+                attribute_name_list, self.arg_types[each_signal_name])
+
             if len(_signal_list) == 1:
                 flattened_args[each_signal_name] = _signal_list[0]
                 flattened_arg_types[each_signal_name] = (
                     self.arg_types[each_signal_name])
             else:
                 n = 0
-                for each_sub_signal, each_interface_lookup in zip(
-                    _signal_list, attribute_name_list):
+                # The following currently only works with one level of
+                # interface hierarchy
+                for each_sub_signal, each_interface_lookup, each_type in zip(
+                    _signal_list, attribute_name_list, hierarchy_types):
 
                     # Get a unique signal name
                     while True:
@@ -411,10 +520,11 @@ class SynchronousTest(object):
                             break
 
                     flattened_args[sub_signal_name] = each_sub_signal
-                    # The type of the sub signal should be the same as
-                    # the interface type
+                    # As we said above, we only support one level of
+                    # hierarchy. This means the type is simply stored in
+                    # `each_type` as follows.
                     flattened_arg_types[sub_signal_name] = (
-                        self.arg_types[each_signal_name])
+                        each_type[1][0])
 
                     interface_lookup[sub_signal_name] = (
                         each_signal_name, each_interface_lookup)
@@ -543,6 +653,7 @@ class SynchronousTest(object):
 
         ### END
 
+        # Set up the recording headers
         recorded_list = []
         recorded_list_names = []
         for each_signal_name in recorded_local_name_list:
@@ -822,9 +933,20 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
                 *(interface_outputs[each_interface][key] for 
                   key in attr_names))
 
-            dut_outputs[each_interface] = [
-                dict(zip(attr_names, each)) for 
-                each in reordered_interface_outputs]
+            # We need to write the interface values to dut_outputs, but
+            # taking the values from ref_outputs if the interface signal was
+            # not an output.
+            new_dut_output = []
+            for ref_output, simulated_output in zip(
+                dut_outputs[each_interface], reordered_interface_outputs):
+
+                new_interface_out = ref_output.copy()
+                new_interface_out.update(
+                    dict(zip(attr_names, simulated_output)))
+
+                new_dut_output.append(new_interface_out)
+
+            dut_outputs[each_interface] = new_dut_output
 
         for each_signal in ref_outputs:
             # Now only output the correct number of cycles

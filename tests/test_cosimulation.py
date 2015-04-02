@@ -1,4 +1,4 @@
-from .base_hdl_test import HDLTestCase, TestCase
+from tests.base_hdl_test import HDLTestCase, TestCase
 
 from veriutils import *
 from myhdl import (intbv, modbv, enum, Signal, ResetSignal, instance,
@@ -38,8 +38,10 @@ class CosimulationTestMixin(object):
 
         self.reset_cycles = 3 # Includes the initial value
 
-        self.default_args = {'test_input': self.test_in, 'output': self.test_out, 
-                             'reset': self.reset, 'clock': self.clock}
+        self.default_args = {'test_input': self.test_in, 
+                             'output': self.test_out, 
+                             'reset': self.reset,
+                             'clock': self.clock}
 
         self.default_arg_types = {'test_input': 'random', 'output': 'output', 
                                   'reset': 'init_reset', 'clock': 'clock'}
@@ -239,7 +241,8 @@ class CosimulationTestMixin(object):
                               ref_expected_mock_calls)
 
             for dut_arg, ref_arg, expected_dut, expected_ref in out_signals:
-                assert dut_arg == ref_arg # Should be true (defined by the test)
+                # Should be true (defined by the test)
+                assert dut_arg == ref_arg 
 
                 self.assertEqual(dut_arg, expected_dut)
                 self.assertEqual(ref_arg, expected_ref)
@@ -350,7 +353,8 @@ class CosimulationTestMixin(object):
                           ref_expected_mock_calls)
 
         for dut_arg, ref_arg, expected_dut, expected_ref in out_signals:
-            assert dut_arg == ref_arg # Should be true (defined by the test)
+            # Should be true (defined by the test)
+            assert dut_arg == ref_arg
 
             self.assertEqual(dut_arg, expected_dut)
             self.assertEqual(ref_arg, expected_ref)
@@ -358,7 +362,7 @@ class CosimulationTestMixin(object):
         for signal in dut_results:
             self.assertEqual(dut_results[signal], ref_results[signal])
 
-    def test_invalid_signal(self):
+    def test_invalid_signal_type(self):
         '''If the arg type is not a valid type, a ValueError should be raised.
         '''
         self.assertRaisesRegex(
@@ -368,6 +372,150 @@ class CosimulationTestMixin(object):
             {'test_input': 'custom', 'output': 'custom', 'reset': 'INVALID', 
              'clock': 'custom'})
 
+        class Interface(object):
+            def __init__(self):
+                self.a = Signal(intbv(0, min=-1000, max=1000))
+
+        self.default_args['output'] = Interface()
+
+        self.assertRaisesRegex(
+            ValueError, 'Invalid argument or argument types',
+            self.construct_and_simulate, 30,
+            self.identity_factory, self.identity_factory, self.default_args,
+            {'test_input': 'custom', 'output': {'a': 'INVALID'}, 
+             'reset': 'custom_reset', 'clock': 'custom'})
+
+
+    def test_argtype_dict_arg_mismatch(self):
+        '''All the arg types in a dict should correspond to a valid signal.
+        '''
+        class Interface(object):
+            def __init__(self):
+                self.a = Signal(intbv(0, min=-1000, max=1000))
+
+        self.default_args['output'] = Interface()
+
+        self.assertRaisesRegex(
+            KeyError, 'Arg type dict references a non-existant signal',
+            self.construct_and_simulate, 30,
+            self.identity_factory, self.identity_factory, self.default_args,
+            {'test_input': 'custom', 'output': {'a': 'output', 'b': 'output'}, 
+             'reset': 'custom_reset', 'clock': 'custom'})
+
+
+    def test_interfaces_type_from_dict(self):
+        '''It should be possible for interfaces to set the type from a dict.
+
+        The dict should contain a lookup from attribute names to valid
+        signal types.
+        '''
+
+        args = self.default_args.copy()
+        arg_types = self.default_arg_types.copy()
+
+        min_val = -1000
+        max_val = 1000
+
+        class Interface(object):
+            def __init__(self):
+                # The attributes are sorted, so we need to run through
+                # them in the correct order. 'a', 'b', 'c', 'd' is fine.
+                self.a = Signal(intbv(0, min=min_val, max=max_val))
+                self.b = Signal(bool(0))
+
+        # A bit of a hack to check the relevant signals are different
+        signals = []
+        def identity_factory(test_input, output, reset, clock):
+            @always_seq(clock.posedge, reset=reset)
+            def identity():
+                if __debug__:
+                    # record the inputs
+                    self.sim_checker(copy.copy(test_input.a.val),
+                                     copy.copy(output.b.val))
+
+                    if len(signals) < 2:
+                        # need to record from both dut and ref
+                        signals.append(
+                            {'output.a': output.a, 
+                             'output.b': output.b,
+                             'test_input.a': test_input.a,
+                             'test_input.b': test_input.b})
+
+                output.a.next = test_input.a
+                test_input.b.next = output.b
+
+            return identity
+
+        args['test_input'] = Interface()
+        args['output'] = Interface()
+
+        # Set up the interface types
+        arg_types['test_input'] = {'a': 'random', 'b': 'output'}
+        arg_types['output'] = {'a': 'output', 'b': 'random'}
+
+        sim_cycles = 31
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, identity_factory, identity_factory, 
+            args, arg_types)
+
+        # The inputs should be the same signal
+        self.assertIs(signals[0]['output.b'], signals[1]['output.b'])
+        self.assertIs(signals[0]['test_input.a'], signals[1]['test_input.a'])
+
+        # The outputs should not be
+        self.assertIsNot(signals[0]['output.a'], signals[1]['output.a'])
+        self.assertIsNot(signals[0]['test_input.b'],
+                         signals[1]['test_input.b'])
+
+        # Check the signals are being driven properly. The random values
+        # are very unlikely to be all zeros, which is what we check for here.
+        self.assertFalse(
+            sum([abs(each['a']) for each in ref_results['test_input']]) == 0)
+
+        self.assertFalse(
+            sum([abs(each['b']) for each in ref_results['output']]) == 0)
+
+        # Also, check the output is correct
+        if self.check_mocks:
+
+            # The mock should be called twice per cycle, with the caveat that
+            # it is not called at all on the reset cycles.
+            assert len(self.sim_checker.call_args_list) == (
+                (sim_cycles - self.reset_cycles) * 2)
+
+            # The expected calls are found from what is recorded on the 
+            # output. These are recorded even during reset cycles, so we need 
+            # to offset those. 
+            # Also we record one cycle delayed from the sim_checker mock 
+            # above, so we need to offset left by that too.
+            dut_expected_mock_calls = [
+                mock.call(_out['a'], _inp['b']) for _inp, _out  in 
+                zip(dut_results['test_input'][self.reset_cycles:][1:], 
+                    dut_results['output'][self.reset_cycles:][1:])]
+
+            ref_expected_mock_calls = [
+                mock.call(_out['a'], _inp['b']) for _inp, _out  in 
+                zip(ref_results['test_input'][self.reset_cycles:][1:], 
+                    ref_results['output'][self.reset_cycles:][1:])]
+
+            # The sim checker args should be shifted up by one sample since
+            # they record a sample earlier than the recorded outputs.
+            out_signals = zip(self.sim_checker.call_args_list[::2][:-1],
+                              self.sim_checker.call_args_list[1::2][:-1],
+                              dut_expected_mock_calls,
+                              ref_expected_mock_calls)
+
+            for dut_arg, ref_arg, expected_dut, expected_ref in out_signals:
+                # Should be true (defined by the test)
+                assert dut_arg == ref_arg
+                self.assertEqual(dut_arg, expected_dut)
+                self.assertEqual(ref_arg, expected_ref)
+
+        for signal in dut_results:
+            # The first value is not yet initialised, so we ignore it.
+            self.assertEqual(dut_results[signal][1:], ref_results[signal][1:])
+        
 
     def test_failing_case(self):
         '''The test object with wrong factories should have wrong output'''

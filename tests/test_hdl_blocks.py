@@ -1,5 +1,5 @@
 
-from .base_hdl_test import HDLTestCase, TestCase
+from tests.base_hdl_test import HDLTestCase, TestCase
 from veriutils import *
 from myhdl import *
 import myhdl
