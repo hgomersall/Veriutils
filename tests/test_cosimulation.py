@@ -1028,6 +1028,48 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
             _broken_factory, self.identity_factory, 
             self.default_args, self.default_arg_types)
 
+    @unittest.skipIf(VIVADO_EXECUTABLE is None,
+                     'Vivado executable not in path')
+    def test_keep_tmp_files(self):
+        '''It should be possible to keep the temporary files after simulation.
+        '''
+        sim_cycles = 30
+        
+        # This method is slightly flaky - it's quite implementation dependent
+        # and may break if mkdtemp is imported into the namespace of
+        # cosimulation rather than tempfile, or if multiple calls are
+        # made to mkdtemp.
+        import tempfile, sys
+        orig_mkdtemp = tempfile.mkdtemp
+
+        dirs = []
+        def mkdtemp_wrapper():
+            new_dir = orig_mkdtemp()
+            dirs.append(new_dir)
+
+            return new_dir
+
+        try:
+            tempfile.mkdtemp = mkdtemp_wrapper
+
+            # We also want to drop the helpful output message to keep
+            # the test clean.
+            sys.stdout = open(os.devnull, "w")
+            vivado_cosimulation(
+                sim_cycles, self.identity_factory, self.identity_factory, 
+                self.default_args, self.default_arg_types,
+                keep_temp_files=True)
+            
+            self.assertTrue(os.path.exists(dirs[0]))
+
+        finally:
+            # clean up
+            tempfile.mkdtemp = orig_mkdtemp
+            sys.stdout = sys.__stdout__
+            try:
+                shutil.rmtree(dirs[0])
+            except OSError:
+                pass
 
     def test_missing_vivado_raises(self):
         '''Vivado missing from the path should raise an EnvironmentError.

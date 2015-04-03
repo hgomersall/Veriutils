@@ -722,7 +722,8 @@ def myhdl_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
 
 
 def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types, 
-                        period=PERIOD, custom_sources=None):
+                        period=PERIOD, custom_sources=None,
+                        keep_temp_files=False):
     '''Run a cosimulation in which the device under test is simulated inside
     Vivado.
 
@@ -734,6 +735,9 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
 
     This is particularly noticeable in the case when an asynchronous reset
     is used. Care should be taken to handle the outputs appropriately.
+
+    By default, all the temporary files are cleaned up after use. This 
+    behaviour can be turned off by settings ``keep_temp_files`` to ``True``.
     '''
 
     if VIVADO_EXECUTABLE is None:
@@ -956,7 +960,12 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
         # Undo the changes to toVHDL
         toVHDL.name = toVHDL_name_state
         toVHDL.directory = toVHDL_dir_state
-        shutil.rmtree(tmp_dir)
+
+        if not keep_temp_files:
+            shutil.rmtree(tmp_dir)
+        else:
+            print('As requested, the temporary files have not been deleted.'
+                  '\nThey can be found in %s.' % (tmp_dir,))
         
     return dut_outputs, ref_outputs
 
