@@ -36,13 +36,13 @@ PERIOD = 10
 
 def _file_writer(filename, signal_list, clock, signal_names=None):
 
-    # Add clock to the signal list
-    signal_list.append(clock)
-    # We also need to add it's name to the name list.
-    # We don't know the name yet, but it's looked up at conversion time.
-    # signal_X is the name assigned in this function (where X is the index
-    # of the signal in the signal_list).
-    signal_names.append('unsigned $signal_%d' % len(signal_names))
+    ## Add clock to the signal list
+    #signal_list.append(clock)
+    ## We also need to add it's name to the name list.
+    ## We don't know the name yet, but it's looked up at conversion time.
+    ## signal_X is the name assigned in this function (where X is the index
+    ## of the signal in the signal_list).
+    #signal_names.append('unsigned $signal_%d' % len(signal_names))
 
     @always(clock.posedge)
     def _dummy_file_writer():
@@ -82,14 +82,14 @@ def _file_writer(filename, signal_list, clock, signal_names=None):
         .join(signal_str_write_list))
 
     _file_writer.vhdl_code = '''
-write_to_file: process (clock) is
+write_to_file: process ($clock) is
     use IEEE.std_logic_textio.all;
 
     file output_file : TEXT open WRITE_MODE is "%s";
     variable output_line : LINE;
     variable first_line_to_print : boolean := true;
 begin
-    if rising_edge(clock) then
+    if rising_edge($clock) then
         if first_line_to_print then
             %s
             writeLine(output_file, output_line);
@@ -311,42 +311,41 @@ class SynchronousTest(object):
 
         _arg_checker(args, arg_types)
 
-        if 'clock' not in arg_types.values():
+        if 'clock' not in flattened_types:
             raise ValueError('Missing clock: There should be a single '
                              'clock in the argument list.')
 
-        if arg_types.values().count('clock') > 1:
+        if flattened_types.count('clock') > 1:
             raise ValueError('Multiple clocks: There should be one and only '
                              'one clock in the argument list.')
 
-        if ('init_reset' not in arg_types.values() and
-            'custom_reset' not in arg_types.values()):
+        if ('init_reset' not in flattened_types and
+            'custom_reset' not in flattened_types):
             raise ValueError('Missing reset: There should be a single '
                              'reset in the argument list.')
 
-        if (arg_types.values().count('init_reset') + 
-            arg_types.values().count('custom_reset') > 1):
+        if (flattened_types.count('init_reset') + 
+            flattened_types.count('custom_reset') > 1):
 
             raise ValueError('Multiple resets: There should be one and only '
                              'one reset in the argument list.')
 
-
-        self.clock = args[arg_types.keys()[arg_types.values().index('clock')]]
+        self.clock = flattened_signals[flattened_types.index('clock')]
         self.clockgen = clock_source(self.clock, self.period)
 
         self._use_init_reset = False
 
-        if 'init_reset' in arg_types.values():
-            self.reset = args[arg_types.keys()[
-                arg_types.values().index('init_reset')]]
+        if 'init_reset' in flattened_types:
+            self.reset = flattened_signals[
+                flattened_types.index('init_reset')]
 
             self.init_reset = init_reset_source(self.reset, self.clock)
             self._use_init_reset = True
 
         else:
             # Assume a custom reset
-            self.reset = args[arg_types.keys()[
-                arg_types.values().index('custom_reset')]]
+            self.reset = flattened_signals[
+                flattened_types.index('custom_reset')]
             self.init_reset = ()
 
         # Deal with random values

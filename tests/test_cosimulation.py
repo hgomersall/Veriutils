@@ -64,6 +64,9 @@ class CosimulationTestMixin(object):
         **kwargs): # pragma: no cover
         raise NotImplementedError
 
+    def results_munger(self, premunged_results):
+        return premunged_results
+
     def test_single_clock(self):
         '''The argument lists should contain one and only one clock.
         '''
@@ -78,6 +81,19 @@ class CosimulationTestMixin(object):
             self.identity_factory, self.identity_factory, self.default_args,
             {'test_input': 'clock', 'output': 'custom', 'reset': 'init_reset', 
              'clock': 'clock'})
+
+        class InterfaceWithClock(object):
+            def __init__(self):
+                self.clock = Signal(bool(1))
+
+        args = self.default_args.copy()
+        args['test_input'] = InterfaceWithClock()
+
+        self.assertRaisesRegex(
+            ValueError, 'Multiple clocks', self.construct_and_simulate, 30,
+            self.identity_factory, self.identity_factory, args,
+            {'test_input': {'clock': 'clock'}, 'output': 'custom', 
+             'reset': 'init_reset', 'clock': 'clock'})
 
     def test_single_reset(self):
         '''The argument lists should contain one and only one reset.
@@ -107,6 +123,19 @@ class CosimulationTestMixin(object):
             ValueError, 'Multiple resets', self.construct_and_simulate, 30,
             self.identity_factory, self.identity_factory, self.default_args,
             {'test_input': 'custom_reset', 'output': 'custom', 
+             'reset': 'init_reset', 'clock': 'clock'})
+
+        class InterfaceWithReset(object):
+            def __init__(self):
+                self.reset = ResetSignal(bool(0), active=1, async=False)
+
+        args = self.default_args.copy()
+        args['test_input'] = InterfaceWithReset()
+
+        self.assertRaisesRegex(
+            ValueError, 'Multiple resets', self.construct_and_simulate, 30,
+            self.identity_factory, self.identity_factory, args,
+            {'test_input': {'reset': 'custom_reset'}, 'output': 'custom', 
              'reset': 'init_reset', 'clock': 'clock'})
 
     def test_init_reset_used(self):
@@ -155,6 +184,8 @@ class CosimulationTestMixin(object):
             custom_sources=[custom_source])
             
         test_input = [i % mod_max for i in range(sim_cycles)]
+
+        test_input = self.results_munger(test_input)
         self.assertEqual(test_input, ref_results['test_input'])
         self.assertEqual(test_input, dut_results['test_input'])
 
@@ -190,6 +221,9 @@ class CosimulationTestMixin(object):
         # truncated test_input to be only sim_cycles long, in case extra
         # sim cycles were added at sim time
         test_input = test_input[:sim_cycles]
+
+        # Do any necessary munging of the results
+        test_input = self.results_munger(test_input)
 
         # Offset the results by one since test_input has recorded one
         # earlier cycle.
@@ -402,7 +436,6 @@ class CosimulationTestMixin(object):
             {'test_input': 'custom', 'output': {'a': 'output', 'b': 'output'}, 
              'reset': 'custom_reset', 'clock': 'custom'})
 
-
     def test_interfaces_type_from_dict(self):
         '''It should be possible for interfaces to set the type from a dict.
 
@@ -513,9 +546,103 @@ class CosimulationTestMixin(object):
                 self.assertEqual(ref_arg, expected_ref)
 
         for signal in dut_results:
-            # The first value is not yet initialised, so we ignore it.
-            self.assertEqual(dut_results[signal][1:], ref_results[signal][1:])
-        
+            self.assertEqual(dut_results[signal], ref_results[signal])
+            
+    def test_clock_in_interface(self):
+        '''It should be possible to set the an interface signal as the clock.
+        '''
+        args = self.default_args.copy()
+        arg_types = self.default_arg_types.copy()
+
+        min_val = -1000
+        max_val = 1000
+
+        class InterfaceWithClock(object):
+            def __init__(self):
+                # The attributes are sorted, so we need to run through
+                # them in the correct order. 'a', 'b', 'c', 'd' is fine.
+                self.a = Signal(intbv(0, min=min_val, max=max_val))
+                self.clock = Signal(bool(0))
+
+        def identity_factory(test_input, output, reset):
+            @always_seq(test_input.clock.posedge, reset=reset)
+            def identity():
+                output.next = test_input.a
+
+            return identity
+
+        args['test_input'] = InterfaceWithClock()
+        args['output'] = copy_signal(args['test_input'].a)
+
+        # Set up the interface types
+        arg_types['test_input'] = {'a': 'random', 'clock': 'clock'}
+
+        # remove the clock
+        del arg_types['clock']
+        del args['clock']
+
+        sim_cycles = 31
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, identity_factory, identity_factory, 
+            args, arg_types)
+
+        for signal in dut_results:
+            self.assertEqual(dut_results[signal], ref_results[signal])
+
+    def test_reset_in_interface(self):
+        '''It should be possible to set the an interface signal as the reset.
+        '''
+        args = self.default_args.copy()
+        arg_types = self.default_arg_types.copy()
+
+        min_val = -1000
+        max_val = 1000
+
+        class InterfaceWithReset(object):
+            def __init__(self):
+                # The attributes are sorted, so we need to run through
+                # them in the correct order. 'a', 'b', 'c', 'd' is fine.
+                self.a = Signal(intbv(0, min=min_val, max=max_val))
+                self.reset = ResetSignal(bool(0), active=1, async=False)
+
+        def identity_factory(test_input, output, clock):
+            @always_seq(clock.posedge, reset=test_input.reset)
+            def identity():
+                output.next = test_input.a
+
+            return identity
+
+        args['test_input'] = InterfaceWithReset()
+        args['output'] = copy_signal(args['test_input'].a)
+
+        # remove the clock
+        del arg_types['reset']
+        del args['reset']
+
+        sim_cycles = 31
+
+        # Set up the interface types
+        arg_types['test_input'] = {'a': 'random', 'reset': 'init_reset'}
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, identity_factory, identity_factory, 
+            args, arg_types)
+
+        for signal in dut_results:
+            self.assertEqual(dut_results[signal], ref_results[signal])
+
+        # Also test the custom reset
+        arg_types['test_input'] = {'a': 'random', 'reset': 'custom_reset'}
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, identity_factory, identity_factory, 
+            args, arg_types)
+
+        for signal in dut_results:
+            self.assertEqual(dut_results[signal], ref_results[signal])
+
+
 
     def test_failing_case(self):
         '''The test object with wrong factories should have wrong output'''
@@ -561,7 +688,16 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         test_obj = SynchronousTest(
             dut_factory, ref_factory, args, arg_types, **kwargs)
 
-        return test_obj.cosimulate(sim_cycles)
+        dut_outputs, ref_outputs = test_obj.cosimulate(sim_cycles)
+
+        for each in arg_types:
+            if dut_outputs is not None:
+                dut_outputs[each] = self.results_munger(dut_outputs[each])
+
+            if ref_outputs is not None:
+                ref_outputs[each] = self.results_munger(ref_outputs[each])
+
+        return dut_outputs, ref_outputs
 
     def test_dut_factory_is_None(self):
         '''It should be possible to pass None as the dut factory.
@@ -802,8 +938,17 @@ class TestCosimulationFunction(CosimulationTestMixin, TestCase):
         self, sim_cycles, dut_factory, ref_factory, args, arg_types, 
         **kwargs):
 
-        return myhdl_cosimulation(
+        dut_outputs, ref_outputs = myhdl_cosimulation(
             sim_cycles, dut_factory, ref_factory, args, arg_types, **kwargs)
+
+        for each in arg_types:
+            if dut_outputs is not None:
+                dut_outputs[each] = self.results_munger(dut_outputs[each])
+
+            if ref_outputs is not None:
+                ref_outputs[each] = self.results_munger(ref_outputs[each])
+
+        return dut_outputs, ref_outputs
 
     def test_dut_factory_is_None(self):
         '''It should be possible to pass None as the dut factory.
@@ -847,6 +992,10 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
 
     check_mocks = False
 
+    def results_munger(self, premunged_results):
+        # Chop off the first value which might be undefined.
+        return premunged_results[1:]
+
     def construct_and_simulate(
         self, sim_cycles, dut_factory, ref_factory, args, arg_types, 
         **kwargs):
@@ -859,11 +1008,10 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
 
         # We've used an asynchronous reset, so the output will be undefined
         # at the first clock edge. Therefore we prune the first sample from
-        # the outputs.
-        for each_signal in arg_types:
-            if arg_types[each_signal] == 'output':
-                dut_outputs[each_signal] = dut_outputs[each_signal][1:]
-                ref_outputs[each_signal] = ref_outputs[each_signal][1:]
+        # all the recorded values
+        for each in arg_types:
+            dut_outputs[each] = self.results_munger(dut_outputs[each])
+            ref_outputs[each] = self.results_munger(ref_outputs[each])
 
         return dut_outputs, ref_outputs
 
