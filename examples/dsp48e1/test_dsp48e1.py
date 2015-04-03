@@ -5,8 +5,6 @@ from .utils import weighted_random_reset_source
 from myhdl import (intbv, enum, Signal, ResetSignal, instance,
                    delay, always, always_seq, Simulation, StopSimulation)
 
-from veriutils import VIVADO_EXECUTABLE
-
 from random import randrange
 import random
 
@@ -17,7 +15,8 @@ from .dsp48e1 import (
     DSP48E1_OPMODE_MULTIPLY_ACCUMULATE,
     DSP48E1_OPMODE_MULTIPLY_DECCUMULATE)
 
-from veriutils import myhdl_cosimulation, vivado_cosimulation, copy_signal
+from veriutils import (
+    myhdl_cosimulation, vivado_cosimulation, copy_signal, VIVADO_EXECUTABLE)
 
 PERIOD = 10
 
