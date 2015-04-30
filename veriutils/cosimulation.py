@@ -214,7 +214,7 @@ class SynchronousTest(object):
         given by `dut_factory` and `ref_factory`. Each factory is constructed
         with the provided args (which probably corresponds to a signal list).
 
-        if `ref_factory` is None, then it is simply not used
+        if `dut_factory` is None, then it is simply not used
 
         arg_types specifies how each arg should be handled. It is a dict to
         a valid type string. The supported type strings are: 
