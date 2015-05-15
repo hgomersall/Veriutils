@@ -665,7 +665,7 @@ class SynchronousTest(object):
                 else:
                     type_str = 'unsigned'
 
-            elif isinstance(locals()[each_signal_name].val, bool):
+            elif isinstance(locals()[each_signal_name]._init, bool):
                 type_str = 'bool'
 
             if each_signal_name not in interface_lookup:

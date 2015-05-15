@@ -139,7 +139,7 @@ def _signal_random_source(output_signal, clock, reset,
 
         next_val_function = lambda: random.randrange(min_val, max_val)
 
-    elif isinstance(output_signal.val, bool):
+    elif isinstance(output_signal._init, bool):
         min_val = 0
         max_val = 2
 

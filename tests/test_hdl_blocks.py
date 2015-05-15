@@ -707,6 +707,44 @@ class TestRandomSource(TestCase):
         sim = Simulation(clockgen, dut, output_check)
         sim.run(quiet=1)
 
+    def test_bool_as_long_signal(self):
+        '''It should be possible to have a bool signal with a long value.
+
+        When a bool signal is update, it is valid to do so with 0 or 1 as well
+        as True and False. Signals updated like this should be handled 
+        properly.
+        '''
+        test_signal = Signal(bool(0))
+
+        test_signal.next = 1
+        test_signal._update()
+
+        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        min_val = 0
+        max_val = 2
+
+        seed = randrange(0, 0x5EEDF00D)
+
+        random.seed(seed)
+        test_output = [randrange(min_val, max_val) for each in range(100)]
+        test_output.reverse()
+        test_output += [test_signal.val] # The first value is not defined yet.
+
+        @always_seq(self.clock.posedge, reset_signal)
+        def output_check():
+            try:
+                self.assertEqual(test_output.pop(), test_signal)
+            except IndexError:
+                raise StopSimulation
+
+        print test_signal.val
+        dut = random_source(test_signal, self.clock, reset_signal, seed)
+
+        clockgen = clock_source(self.clock, self.clock_period)
+
+        sim = Simulation(clockgen, dut, output_check)
+        sim.run(quiet=1)
+
     def test_enum_signal(self):
         '''It should be possible to generate random enum signals.
         '''

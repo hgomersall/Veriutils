@@ -817,6 +817,56 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
             toVHDL.directory = toVHDL_directory_state
             shutil.rmtree(tmp_dir)
 
+    def test_dut_convertible_top_with_long_boolean_output(self):
+        '''Output booleans with long type vals (0, 1) should be handled.
+
+        That is, code in which output booleans have had their value set 
+        using '1' rather than True should convert fine.
+        '''
+
+        simulated_input_cycles = 20
+
+        args = self.default_args.copy()
+        arg_types = self.default_arg_types.copy()
+
+        args['output'] = Signal(bool(0))
+
+        args['output'].next = 1
+        args['output']._update()
+
+        del args['test_input']
+        del arg_types['test_input']
+
+        def dut(output, reset, clock):
+
+            @always_seq(self.clock.posedge, reset)
+            def test_dut():
+                output.next = 1
+
+            return test_dut
+
+        test_obj = SynchronousTest(dut, dut, args, arg_types)
+
+        tmp_dir = tempfile.mkdtemp()
+        temp_file = os.path.join(tmp_dir, 'test_file')
+
+        output_file = os.path.join(tmp_dir, 'dut_convertible_top.vhd')
+
+        test_obj.cosimulate(simulated_input_cycles)
+
+        # remember the toVHDL.directory state
+        try:
+            toVHDL_directory_state = toVHDL.directory
+            toVHDL.directory = tmp_dir
+
+            toVHDL(test_obj.dut_convertible_top, temp_file)
+
+            self.assertTrue(os.path.exists(output_file))
+
+        finally:
+            toVHDL.directory = toVHDL_directory_state
+            shutil.rmtree(tmp_dir)
+
     def test_dut_convertible_top_with_interface(self):
         '''Convertible top duts with interfaces should be supported.
         
