@@ -460,6 +460,8 @@ class SynchronousTest(object):
 
         sim.run(duration=cycles*self.period, quiet=1)
 
+        sim._finalize()
+
         self._simulator_run = True
         return self.outputs
 
@@ -480,6 +482,11 @@ class SynchronousTest(object):
         if not self._simulator_run:
             raise RuntimeError('The simulator should be run before '
                                'dut_convertible_top')
+
+        if self._dut_factory is None:
+            raise RuntimeError('The dut was configured to be None in '
+                               'construction, so no meaningful conversion '
+                               'can take place.')
 
         clock = self.clock
         reset = self.reset

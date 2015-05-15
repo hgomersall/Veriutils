@@ -3,7 +3,7 @@ from tests.base_hdl_test import HDLTestCase, TestCase
 from veriutils import *
 from myhdl import (intbv, modbv, enum, Signal, ResetSignal, instance,
                    delay, always, always_seq, Simulation, StopSimulation,
-                   toVHDL)
+                   toVHDL, always_comb)
 
 import unittest
 import copy
@@ -283,6 +283,43 @@ class CosimulationTestMixin(object):
 
         for signal in dut_results:
             self.assertEqual(dut_results[signal], ref_results[signal])
+
+    def test_simulation_cleans_up(self):
+        '''The simulation should clean up afterwards.
+        
+        Sensitivity lists and so on on the signals should be cleared.
+        '''
+
+        sim_cycles = 30
+
+        args = copy.copy(self.default_args)
+        arg_types = copy.copy(self.default_arg_types)
+
+        def identity_factory(test_input, test_input2, output, reset, clock):
+
+            @always_comb
+            def assignment():
+                test_input2.next = test_input
+
+            @always_seq(clock.posedge, reset=reset)
+            def identity():
+
+                output.next = test_input2
+
+            return identity, assignment
+
+        args['test_input2'] = Signal(intbv(0)[10:])
+        arg_types['test_input2'] = 'output'
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, identity_factory, identity_factory, args, arg_types)
+
+        self.assertTrue(
+            len(args['test_input']._eventWaiters) == 0)
+
+        self.assertTrue(
+            len(args['clock']._posedgeWaiters) == 0)
+
 
     def test_dut_factory_returning_None_raises(self):
         '''If the dut factory returns None, a ValueError should be raised.
@@ -734,6 +771,28 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
             RuntimeError, 'The simulator should be run before '
             'dut_convertible_top', test_obj.dut_convertible_top,
             'foobarfile')
+
+        # Check it happened before the file was written
+        assert not os.path.exists('foobarfile')
+
+    def test_dut_convertible_top_raises_for_None_dut(self):
+        '''If the dut is None, an exception should be raise.
+
+        It should be possible to set the device under test to be None when
+        constructing the test class, which would yield a nonsense 
+        dut_convertible_top. This situation should cause the 
+        dut_convertible_top function raise with a suitable error.
+        '''
+
+
+        test_obj = SynchronousTest(
+            None, self.identity_factory, 
+            self.default_args, self.default_arg_types)
+        test_obj.cosimulate(20)
+
+        self.assertRaisesRegex(
+            RuntimeError, 'The dut was configured to be None in construction',
+            test_obj.dut_convertible_top, 'foobarfile')
 
         # Check it happened before the file was written
         assert not os.path.exists('foobarfile')
