@@ -224,6 +224,7 @@ class SynchronousTest(object):
             * `'output'`
             * `'custom'`
             * `'custom_reset'`
+            * `'non-signal'`
 
         * The `'clock'` arg is auto-connected to a clock generator. There 
         should be at least one clock object.
@@ -241,6 +242,8 @@ class SynchronousTest(object):
         * A `'custom'` arg is assumed to be handled elsewhere (say, as a 
         constant or handled through a custom_source).
         * `'custom_reset'` is like a `'custom'` arg, but for reset signals.
+        * `'non-signal'` denotes an argument that is not a signal or an
+        interface (i.e. an argument that is used during construction only).
 
         If an argument is an interface type, then a dict of the above can be
         used. That is, each attribute in the interface can be a key in a 
@@ -256,7 +259,7 @@ class SynchronousTest(object):
         '''
 
         valid_arg_types = ('clock', 'init_reset', 'random', 'output', 
-                           'custom', 'custom_reset')
+                           'custom', 'custom_reset', 'non-signal')
 
         self.period = PERIOD
         
@@ -290,7 +293,11 @@ class SynchronousTest(object):
 
                 elif not isinstance(signal_objs[name], myhdl._Signal._Signal):
 
-                    if types[name] in valid_arg_types:
+                    if types[name] == 'non-signal':
+                        # Nothing more to be done
+                        continue
+
+                    elif types[name] in valid_arg_types:
                         # This is ok (we can assign a hierarchy to be of 
                         # one type
                         flattened_types.append(types[name])
@@ -379,6 +386,11 @@ class SynchronousTest(object):
                 if types[name] == 'output':
                     output_dict[name] = copy_signal(signal_dict[name])
 
+                elif types[name] == 'non-signal':
+                    # Do a non-deep copy. If your code is messing with
+                    # some deep mutable types, then it needs rethinking!
+                    output_dict[name] = copy.copy(signal_dict[name])
+
                 elif types[name] in valid_arg_types:
                     # We don't want to copy
                     continue
@@ -407,7 +419,15 @@ class SynchronousTest(object):
             dut_outputs = None
 
         self.output_recorders = []
-        for signal in args:
+        for arg_name in args:
+
+            if arg_types[arg_name] == 'non-signal':
+                # We don't record non-signals, so continue to the next arg.
+                continue
+
+            else:
+                signal = arg_name
+
             dut_signal = self.dut_args[signal]
             ref_signal = self.ref_args[signal]
 
@@ -492,13 +512,20 @@ class SynchronousTest(object):
         reset = self.reset
         ref_outputs = self.outputs[1]
 
-        signal_list = sorted(self.args.keys())
+        arg_list = sorted(self.args.keys())
+        non_signal_list = []
 
         # Turn all the interfaces into just another signal in the list
         flattened_args = {}
         flattened_arg_types = {}
         interface_lookup = {}
-        for each_signal_name in signal_list:
+        for each_arg_name in arg_list:
+
+            if self.arg_types[each_arg_name] == 'non-signal':
+                non_signal_list.append(each_arg_name)
+            else:
+                each_signal_name = each_arg_name
+
             each_signal_obj = self.args[each_signal_name]
 
             _signal_list, attribute_name_list = (
@@ -522,7 +549,7 @@ class SynchronousTest(object):
                     while True:
                         sub_signal_name = each_signal_name + str(n)
                         n += 1                        
-                        if sub_signal_name not in signal_list:
+                        if sub_signal_name not in arg_list:
                             break
 
                     flattened_args[sub_signal_name] = each_sub_signal
@@ -705,6 +732,10 @@ class SynchronousTest(object):
                 if interface_name not in dut_args:
                     locals()[interface_name] = self.args[interface_name]
                     dut_args[interface_name] = locals()[interface_name]
+
+        # Add back in the non-signals
+        for non_signal in non_signal_list:
+            dut_args[non_signal] = self.args[non_signal]
 
         # Finally, add the device under test
         instances.append(self._dut_factory(**dut_args))
