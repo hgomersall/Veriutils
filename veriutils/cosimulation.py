@@ -792,7 +792,7 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
     _cycles = cycles + 2
 
     # We need to create the test data
-    sim_object.cosimulate(_cycles)
+    sim_object.cosimulate(cycles)
 
     config = RawConfigParser()
     config.read('veriutils.cfg')

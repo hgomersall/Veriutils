@@ -737,7 +737,6 @@ class TestRandomSource(TestCase):
             except IndexError:
                 raise StopSimulation
 
-        print test_signal.val
         dut = random_source(test_signal, self.clock, reset_signal, seed)
 
         clockgen = clock_source(self.clock, self.clock_period)
