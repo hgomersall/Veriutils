@@ -62,6 +62,18 @@ def clock_source(clock, period):
             yield(delay(odd_period))
             clock.next = not clock
 
+    clock_source.verilog_code = '''
+initial begin: CLOCK_SOURCE_CLOCKGEN
+    $clock <= %d;
+    while (1'b1) begin
+        # $even_period;
+        $clock <= (!$clock);
+        # $odd_period;
+        $clock <= (!$clock);
+    end
+end
+''' % (start_val,)
+
     clock_source.vhdl_code = '''
 CLOCK_SOURCE_CLOCKGEN: process is
 begin
@@ -76,7 +88,7 @@ wait;
 end process CLOCK_SOURCE_CLOCKGEN;
 ''' % (start_val, not_start_val, start_val)
 
-    clock.driven = True
+    clock.driven = 'reg'
 
     return _clockgen
 

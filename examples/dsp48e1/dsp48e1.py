@@ -176,11 +176,29 @@ def DSP48E1(A, B, C, P, opmode, clock_enable, reset, clock):
     A.read = True
     B.read = True
     C.read = True    
-    P.driven = True
+    P.driven = 'reg'
     opmode.read = True
     clock_enable.read = True
     clock.read = True
     reset.read = True
+
+    # For some reason I don't understand, the following doesn't work 
+    # (vivado complains at the elaboration phase about not being able to
+    # connect the signals).
+    # Please someone fix it!
+    DSP48E1.verilog_code = '''
+DSP48E1 dsp48_wrapper_instance
+(
+    .A($A),
+    .B($B),
+    .C($C),
+    .P($P),
+    .opmode($opmode),
+    .clock_enable($clock_enable),
+    .reset($reset),
+    .clock($clock)
+);
+'''
 
     DSP48E1.vhdl_code = '''
 dsp48_wrapper: entity work.DSP48E1(MyHDL)

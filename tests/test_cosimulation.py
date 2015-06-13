@@ -16,10 +16,9 @@ import shutil
 
 import mock
 
-from veriutils import VIVADO_EXECUTABLE
-
-from veriutils import (SynchronousTest, myhdl_cosimulation,
-                       vivado_cosimulation)
+from veriutils import (
+    VIVADO_EXECUTABLE, SynchronousTest, myhdl_cosimulation,
+    vivado_vhdl_cosimulation, VivadoError)
 
 
 class CosimulationTestMixin(object):
@@ -39,21 +38,21 @@ class CosimulationTestMixin(object):
         self.reset_cycles = 3 # Includes the initial value
 
         self.default_args = {'test_input': self.test_in, 
-                             'output': self.test_out, 
+                             'test_output': self.test_out, 
                              'reset': self.reset,
                              'clock': self.clock}
 
-        self.default_arg_types = {'test_input': 'random', 'output': 'output', 
+        self.default_arg_types = {'test_input': 'random', 'test_output': 'output', 
                                   'reset': 'init_reset', 'clock': 'clock'}
         
         self.sim_checker = mock.Mock()
-        def identity_factory(test_input, output, reset, clock):
+        def identity_factory(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def identity():
                 if __debug__:
                     self.sim_checker(copy.copy(test_input.val))
 
-                output.next = test_input
+                test_output.next = test_input
 
             return identity
 
@@ -78,13 +77,13 @@ class CosimulationTestMixin(object):
         self.assertRaisesRegex(
             ValueError, 'Missing clock', self.construct_simulate_and_munge, 30,
             self.identity_factory, self.identity_factory, self.default_args,
-            {'test_input': 'custom', 'output': 'custom', 'reset': 'init_reset', 
+            {'test_input': 'custom', 'test_output': 'custom', 'reset': 'init_reset', 
              'clock': 'custom'})            
 
         self.assertRaisesRegex(
             ValueError, 'Multiple clocks', self.construct_simulate_and_munge, 30,
             self.identity_factory, self.identity_factory, self.default_args,
-            {'test_input': 'clock', 'output': 'custom', 'reset': 'init_reset', 
+            {'test_input': 'clock', 'test_output': 'custom', 'reset': 'init_reset', 
              'clock': 'clock'})
 
         class InterfaceWithClock(object):
@@ -97,7 +96,7 @@ class CosimulationTestMixin(object):
         self.assertRaisesRegex(
             ValueError, 'Multiple clocks', self.construct_simulate_and_munge, 30,
             self.identity_factory, self.identity_factory, args,
-            {'test_input': {'clock': 'clock'}, 'output': 'custom', 
+            {'test_input': {'clock': 'clock'}, 'test_output': 'custom', 
              'reset': 'init_reset', 'clock': 'clock'})
 
     def test_single_reset(self):
@@ -109,25 +108,25 @@ class CosimulationTestMixin(object):
         self.assertRaisesRegex(
             ValueError, 'Missing reset', self.construct_simulate_and_munge, 30,
             self.identity_factory, self.identity_factory, self.default_args,
-            {'test_input': 'custom', 'output': 'custom', 'reset': 'custom', 
+            {'test_input': 'custom', 'test_output': 'custom', 'reset': 'custom', 
              'clock': 'clock'})            
 
         self.assertRaisesRegex(
             ValueError, 'Multiple resets', self.construct_simulate_and_munge, 30,
             self.identity_factory, self.identity_factory, self.default_args,
-            {'test_input': 'init_reset', 'output': 'custom', 
+            {'test_input': 'init_reset', 'test_output': 'custom', 
              'reset': 'init_reset', 'clock': 'clock'})
 
         self.assertRaisesRegex(
             ValueError, 'Multiple resets', self.construct_simulate_and_munge, 30,
             self.identity_factory, self.identity_factory, self.default_args,
-            {'test_input': 'custom_reset', 'output': 'custom', 
+            {'test_input': 'custom_reset', 'test_output': 'custom', 
              'reset': 'custom_reset', 'clock': 'clock'})
 
         self.assertRaisesRegex(
             ValueError, 'Multiple resets', self.construct_simulate_and_munge, 30,
             self.identity_factory, self.identity_factory, self.default_args,
-            {'test_input': 'custom_reset', 'output': 'custom', 
+            {'test_input': 'custom_reset', 'test_output': 'custom', 
              'reset': 'init_reset', 'clock': 'clock'})
 
         class InterfaceWithReset(object):
@@ -140,7 +139,7 @@ class CosimulationTestMixin(object):
         self.assertRaisesRegex(
             ValueError, 'Multiple resets', self.construct_simulate_and_munge, 30,
             self.identity_factory, self.identity_factory, args,
-            {'test_input': {'reset': 'custom_reset'}, 'output': 'custom', 
+            {'test_input': {'reset': 'custom_reset'}, 'test_output': 'custom', 
              'reset': 'init_reset', 'clock': 'clock'})
 
     def test_init_reset_used(self):
@@ -151,7 +150,7 @@ class CosimulationTestMixin(object):
             sim_cycles, self.identity_factory, self.identity_factory, 
             self.default_args, self.default_arg_types)
 
-        for signal in ('test_input', 'output'):
+        for signal in ('test_input', 'test_output'):
             self.assertEqual(
                 dut_results[signal][:self.reset_cycles], 
                 [self.default_args[signal]._init] * self.reset_cycles)
@@ -167,13 +166,13 @@ class CosimulationTestMixin(object):
         instantiated block with all the signals set up already.
         '''
         mod_max = 20
-        def _custom_source(output, clock):
+        def _custom_source(test_output, clock):
             counter = modbv(0, min=0, max=mod_max)
             reset = ResetSignal(bool(0), active=1, async=False)
             @always_seq(clock.posedge, reset=reset)
             def custom():
                 counter[:] = counter + 1
-                output.next = counter
+                test_output.next = counter
 
             return custom
 
@@ -184,7 +183,7 @@ class CosimulationTestMixin(object):
         dut_results, ref_results = self.construct_simulate_and_munge(
             sim_cycles, self.identity_factory, self.identity_factory, 
             self.default_args, 
-            {'test_input': 'custom', 'output': 'output',
+            {'test_input': 'custom', 'test_output': 'output',
              'reset': 'init_reset', 'clock': 'clock'}, 
             custom_sources=[custom_source])
             
@@ -219,7 +218,7 @@ class CosimulationTestMixin(object):
         dut_results, ref_results = self.construct_simulate_and_munge(
             sim_cycles, self.identity_factory, self.identity_factory, 
             self.default_args, 
-            {'test_input': 'custom', 'output': 'output',
+            {'test_input': 'custom', 'test_output': 'output',
              'reset': 'custom_reset', 'clock': 'clock'}, 
             custom_sources=[custom_source])
 
@@ -242,7 +241,7 @@ class CosimulationTestMixin(object):
             ValueError, 'Invalid argument or argument type keys', 
             self.construct_simulate_and_munge, 30,
             self.identity_factory, self.identity_factory, self.default_args,
-            {'test_input': 'custom', 'output': 'custom', 'reset': 'custom', 
+            {'test_input': 'custom', 'test_output': 'custom', 'reset': 'custom', 
              'foo': 'custom'})
 
 
@@ -267,10 +266,10 @@ class CosimulationTestMixin(object):
             # so we need to offset left by that too.
             dut_expected_mock_calls = [
                 mock.call(each) for each in 
-                dut_results['output'][self.reset_cycles:][1:]]
+                dut_results['test_output'][self.reset_cycles:][1:]]
             ref_expected_mock_calls = [
                 mock.call(each) for each in 
-                ref_results['output'][self.reset_cycles:][1:]]
+                ref_results['test_output'][self.reset_cycles:][1:]]
 
             # The sim checker args should be shifted up by one sample since
             # they record a sample earlier than the recorded outputs.
@@ -300,7 +299,7 @@ class CosimulationTestMixin(object):
         args = copy.copy(self.default_args)
         arg_types = copy.copy(self.default_arg_types)
 
-        def identity_factory(test_input, test_input2, output, reset, clock):
+        def identity_factory(test_input, test_input2, test_output, reset, clock):
 
             @always_comb
             def assignment():
@@ -309,7 +308,7 @@ class CosimulationTestMixin(object):
             @always_seq(clock.posedge, reset=reset)
             def identity():
 
-                output.next = test_input2
+                test_output.next = test_input2
 
             return identity, assignment
 
@@ -378,7 +377,7 @@ class CosimulationTestMixin(object):
                 self.c = Signal(bool(0))
                 self.d = Signal(enum_vals.a)
 
-        def identity_factory(test_input, output, reset, clock):
+        def identity_factory(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def identity():
                 if __debug__:
@@ -387,15 +386,15 @@ class CosimulationTestMixin(object):
                                      copy.copy(test_input.c.val), 
                                      copy.copy(test_input.d.val))
 
-                output.a.next = test_input.a
-                output.b.next = test_input.b
-                output.c.next = test_input.c
-                output.d.next = test_input.d
+                test_output.a.next = test_input.a
+                test_output.b.next = test_input.b
+                test_output.c.next = test_input.c
+                test_output.d.next = test_input.d
 
             return identity            
 
         args['test_input'] = Interface()
-        args['output'] = Interface()
+        args['test_output'] = Interface()
 
         sim_cycles = 31
 
@@ -415,11 +414,11 @@ class CosimulationTestMixin(object):
         # so we need to offset left by that too.
         dut_expected_mock_calls = [
             mock.call(each['a'], each['b'], each['c'], each['d']) 
-            for each in dut_results['output'][self.reset_cycles:][1:]]
+            for each in dut_results['test_output'][self.reset_cycles:][1:]]
 
         ref_expected_mock_calls = [
             mock.call(each['a'], each['b'], each['c'], each['d']) 
-            for each in ref_results['output'][self.reset_cycles:][1:]]
+            for each in ref_results['test_output'][self.reset_cycles:][1:]]
 
         # The sim checker args should be shifted up by one sample since
         # they record a sample earlier than the recorded outputs.
@@ -445,20 +444,20 @@ class CosimulationTestMixin(object):
             ValueError, 'Invalid argument or argument types',
             self.construct_simulate_and_munge, 30,
             self.identity_factory, self.identity_factory, self.default_args,
-            {'test_input': 'custom', 'output': 'custom', 'reset': 'INVALID', 
+            {'test_input': 'custom', 'test_output': 'custom', 'reset': 'INVALID', 
              'clock': 'custom'})
 
         class Interface(object):
             def __init__(self):
                 self.a = Signal(intbv(0, min=-1000, max=1000))
 
-        self.default_args['output'] = Interface()
+        self.default_args['test_output'] = Interface()
 
         self.assertRaisesRegex(
             ValueError, 'Invalid argument or argument types',
             self.construct_simulate_and_munge, 30,
             self.identity_factory, self.identity_factory, self.default_args,
-            {'test_input': 'custom', 'output': {'a': 'INVALID'}, 
+            {'test_input': 'custom', 'test_output': {'a': 'INVALID'}, 
              'reset': 'custom_reset', 'clock': 'custom'})
 
 
@@ -469,13 +468,13 @@ class CosimulationTestMixin(object):
             def __init__(self):
                 self.a = Signal(intbv(0, min=-1000, max=1000))
 
-        self.default_args['output'] = Interface()
+        self.default_args['test_output'] = Interface()
 
         self.assertRaisesRegex(
             KeyError, 'Arg type dict references a non-existant signal',
             self.construct_simulate_and_munge, 30,
             self.identity_factory, self.identity_factory, self.default_args,
-            {'test_input': 'custom', 'output': {'a': 'output', 'b': 'output'}, 
+            {'test_input': 'custom', 'test_output': {'a': 'output', 'b': 'output'}, 
              'reset': 'custom_reset', 'clock': 'custom'})
 
     def test_interfaces_type_from_dict(self):
@@ -500,33 +499,33 @@ class CosimulationTestMixin(object):
 
         # A bit of a hack to check the relevant signals are different
         signals = []
-        def identity_factory(test_input, output, reset, clock):
+        def identity_factory(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def identity():
                 if __debug__:
                     # record the inputs
                     self.sim_checker(copy.copy(test_input.a.val),
-                                     copy.copy(output.b.val))
+                                     copy.copy(test_output.b.val))
 
                     if len(signals) < 2:
                         # need to record from both dut and ref
                         signals.append(
-                            {'output.a': output.a, 
-                             'output.b': output.b,
+                            {'test_output.a': test_output.a, 
+                             'test_output.b': test_output.b,
                              'test_input.a': test_input.a,
                              'test_input.b': test_input.b})
 
-                output.a.next = test_input.a
-                test_input.b.next = output.b
+                test_output.a.next = test_input.a
+                test_input.b.next = test_output.b
 
             return identity
 
         args['test_input'] = Interface()
-        args['output'] = Interface()
+        args['test_output'] = Interface()
 
         # Set up the interface types
         arg_types['test_input'] = {'a': 'random', 'b': 'output'}
-        arg_types['output'] = {'a': 'output', 'b': 'random'}
+        arg_types['test_output'] = {'a': 'output', 'b': 'random'}
 
         sim_cycles = 31
 
@@ -535,11 +534,11 @@ class CosimulationTestMixin(object):
             args, arg_types)
 
         # The inputs should be the same signal
-        self.assertIs(signals[0]['output.b'], signals[1]['output.b'])
+        self.assertIs(signals[0]['test_output.b'], signals[1]['test_output.b'])
         self.assertIs(signals[0]['test_input.a'], signals[1]['test_input.a'])
 
         # The outputs should not be
-        self.assertIsNot(signals[0]['output.a'], signals[1]['output.a'])
+        self.assertIsNot(signals[0]['test_output.a'], signals[1]['test_output.a'])
         self.assertIsNot(signals[0]['test_input.b'],
                          signals[1]['test_input.b'])
 
@@ -549,7 +548,7 @@ class CosimulationTestMixin(object):
             sum([abs(each['a']) for each in ref_results['test_input']]) == 0)
 
         self.assertFalse(
-            sum([abs(each['b']) for each in ref_results['output']]) == 0)
+            sum([abs(each['b']) for each in ref_results['test_output']]) == 0)
 
         # Also, check the output is correct
         if self.check_mocks:
@@ -567,12 +566,12 @@ class CosimulationTestMixin(object):
             dut_expected_mock_calls = [
                 mock.call(_out['a'], _inp['b']) for _inp, _out  in 
                 zip(dut_results['test_input'][self.reset_cycles:][1:], 
-                    dut_results['output'][self.reset_cycles:][1:])]
+                    dut_results['test_output'][self.reset_cycles:][1:])]
 
             ref_expected_mock_calls = [
                 mock.call(_out['a'], _inp['b']) for _inp, _out  in 
                 zip(ref_results['test_input'][self.reset_cycles:][1:], 
-                    ref_results['output'][self.reset_cycles:][1:])]
+                    ref_results['test_output'][self.reset_cycles:][1:])]
 
             # The sim checker args should be shifted up by one sample since
             # they record a sample earlier than the recorded outputs.
@@ -606,15 +605,15 @@ class CosimulationTestMixin(object):
                 self.a = Signal(intbv(0, min=min_val, max=max_val))
                 self.clock = Signal(bool(0))
 
-        def identity_factory(test_input, output, reset):
+        def identity_factory(test_input, test_output, reset):
             @always_seq(test_input.clock.posedge, reset=reset)
             def identity():
-                output.next = test_input.a
+                test_output.next = test_input.a
 
             return identity
 
         args['test_input'] = InterfaceWithClock()
-        args['output'] = copy_signal(args['test_input'].a)
+        args['test_output'] = copy_signal(args['test_input'].a)
 
         # Set up the interface types
         arg_types['test_input'] = {'a': 'random', 'clock': 'clock'}
@@ -648,15 +647,15 @@ class CosimulationTestMixin(object):
                 self.a = Signal(intbv(0, min=min_val, max=max_val))
                 self.reset = ResetSignal(bool(0), active=1, async=False)
 
-        def identity_factory(test_input, output, clock):
+        def identity_factory(test_input, test_output, clock):
             @always_seq(clock.posedge, reset=test_input.reset)
             def identity():
-                output.next = test_input.a
+                test_output.next = test_input.a
 
             return identity
 
         args['test_input'] = InterfaceWithReset()
-        args['output'] = copy_signal(args['test_input'].a)
+        args['test_output'] = copy_signal(args['test_input'].a)
 
         # remove the clock
         del arg_types['reset']
@@ -689,12 +688,12 @@ class CosimulationTestMixin(object):
     def test_failing_case(self):
         '''The test object with wrong factories should have wrong output'''
 
-        def flipper_factory(test_input, output, reset, clock):
+        def flipper_factory(test_input, test_output, reset, clock):
             '''Flips the output bits
             '''
             @always_seq(clock.posedge, reset=reset)
             def flipper():
-                output.next = ~test_input
+                test_output.next = ~test_input
 
             return flipper
 
@@ -721,10 +720,10 @@ class CosimulationTestMixin(object):
         dictionaries after simulation.
         '''
         def non_sig_identity_factory(
-            test_input, output, non_sig, reset, clock):
+            test_input, test_output, non_sig, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def identity():
-                output.next = test_input
+                test_output.next = test_input
 
             return identity
 
@@ -792,7 +791,7 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         sim_cycles = 20
         dut_results, ref_results = self.construct_simulate_and_munge(
             sim_cycles, None, self.identity_factory, self.default_args, 
-            {'test_input': 'custom', 'output': 'output',
+            {'test_input': 'custom', 'test_output': 'output',
              'reset': 'init_reset', 'clock': 'clock'})
 
         self.assertIs(dut_results, None)
@@ -851,7 +850,7 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
 
         enum_names = ('a', 'b', 'c', 'd', 'e')
         enum_vals = enum(*enum_names)
-        args['output'] = Signal(enum_vals.a)
+        args['test_output'] = Signal(enum_vals.a)
         args['test_input'] = Signal(enum_vals.a)
 
         test_obj = SynchronousTest(
@@ -887,12 +886,12 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         args['test_input2'] = Signal(intbv(0)[10:])
         arg_types['test_input2'] = 'random'
 
-        def dut(test_input, test_input2, output, reset, clock):
+        def dut(test_input, test_input2, test_output, reset, clock):
 
             @always_seq(self.clock.posedge, reset)
             def test_dut():
 
-                output.next = test_input + test_input2
+                test_output.next = test_input + test_input2
 
             return test_dut
 
@@ -930,19 +929,19 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         args = self.default_args.copy()
         arg_types = self.default_arg_types.copy()
 
-        args['output'] = Signal(bool(0))
+        args['test_output'] = Signal(bool(0))
 
-        args['output'].next = 1
-        args['output']._update()
+        args['test_output'].next = 1
+        args['test_output']._update()
 
         del args['test_input']
         del arg_types['test_input']
 
-        def dut(output, reset, clock):
+        def dut(test_output, reset, clock):
 
             @always_seq(self.clock.posedge, reset)
             def test_dut():
-                output.next = 1
+                test_output.next = 1
 
             return test_dut
 
@@ -988,20 +987,20 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
                 self.b = Signal(intbv(0, min=min_val, max=max_val))
                 self.c = Signal(bool(0))
 
-        def dut(test_input, test_input2, output, reset, clock):
+        def dut(test_input, test_input2, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def test_dut():
-                # make sure output.a never overflows
+                # make sure test_output.a never overflows
                 if test_input.a < max_val - 10:
-                    output.a.next = test_input.a + test_input2
+                    test_output.a.next = test_input.a + test_input2
 
-                output.b.next = test_input.b
-                output.c.next = test_input.c
+                test_output.b.next = test_input.b
+                test_output.c.next = test_input.c
 
             return test_dut
 
         args['test_input'] = Interface()
-        args['output'] = Interface()
+        args['test_output'] = Interface()
 
         args['test_input2'] = Signal(intbv(0)[2:])
         arg_types['test_input2'] = 'random'
@@ -1034,25 +1033,25 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         This is important as it allows the output signal to be used by a
         custom source, and it is the reference that is used.
         '''
-        def useless_factory(test_input, output, reset, clock):
+        def useless_factory(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def useless():
                 # Include test_input to stop complaints about undriven signal
-                output.next = 0 * test_input
+                test_output.next = 0 * test_input
 
             return useless
 
         mod_max = 20
-        def _custom_source(test_input, output, reset, clock):
+        def _custom_source(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def custom():
                 # Adds one to the output signal
-                test_input.next = output + 1
+                test_input.next = test_output + 1
 
             return custom
 
         custom_source = _custom_source(self.default_args['test_input'],
-                                       self.default_args['output'],
+                                       self.default_args['test_output'],
                                        self.default_args['reset'],
                                        self.default_args['clock'])
 
@@ -1060,7 +1059,7 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         dut_results, ref_results = self.construct_simulate_and_munge(
             sim_cycles, useless_factory, self.identity_factory, 
             self.default_args, 
-            {'test_input': 'custom', 'output': 'output',
+            {'test_input': 'custom', 'test_output': 'output',
              'reset': 'init_reset', 'clock': 'clock'}, 
             custom_sources=[custom_source])
 
@@ -1074,17 +1073,17 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         # Then truncate it suitably
         test_ref_output = test_ref_output[:sim_cycles]
 
-        self.assertEqual(test_ref_output, ref_results['output'])
-        self.assertEqual(test_dut_output, dut_results['output'])
+        self.assertEqual(test_ref_output, ref_results['test_output'])
+        self.assertEqual(test_dut_output, dut_results['test_output'])
 
     def test_should_convert_with_non_signal_in_args(self):
         '''The conversion should happen when a non-signal was in the args.
         '''
         def dut(
-            test_input, output, non_sig, reset, clock):
+            test_input, test_output, non_sig, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def identity():
-                output.next = test_input
+                test_output.next = test_input
 
             return identity
 
@@ -1165,33 +1164,38 @@ class TestCosimulationFunction(CosimulationTestMixin, TestCase):
         sim_cycles = 20
         dut_results, ref_results = self.construct_simulate_and_munge(
             sim_cycles, None, self.identity_factory, self.default_args, 
-            {'test_input': 'custom', 'output': 'output',
+            {'test_input': 'custom', 'test_output': 'output',
              'reset': 'init_reset', 'clock': 'clock'})
 
         self.assertIs(dut_results, None)
 
 
-def _broken_factory(test_input, output, reset, clock):
+def _broken_factory(test_input, test_output, reset, clock):
     
     @always_seq(clock.posedge, reset=reset)
     def broken_identity():
-        output.next = test_input
+        test_output.next = test_input
     
-    output.driven = True
+    test_output.driven = 'reg'
     test_input.read = True
 
     _broken_factory.vhdl_code = '''
-garbage
-'''
-
+    garbage
+    '''
+    _broken_factory.verilog_code = '''
+    garbage
+    '''
     return broken_identity
 
-class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
-    '''There should be an alternative version of the cosimulation function
-    that runs the device under test through the Vivado simulator.
-    '''
+class VivadoCosimulationFunctionTests(CosimulationTestMixin):
+    # Common code for Vivado cosimulation tests.
 
     check_mocks = False
+
+    def vivado_sim_wrapper(self, sim_cycles, dut_factory, ref_factory, 
+                           args, arg_types, **kwargs):
+
+        raise NotImplementedError
 
     def results_munger(self, premunged_results):
         # Chop off the first value which might be undefined.
@@ -1204,7 +1208,7 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
         if VIVADO_EXECUTABLE is None:
             raise unittest.SkipTest('Vivado executable not in path')
 
-        return vivado_cosimulation(
+        return self.vivado_sim_wrapper(
             sim_cycles, dut_factory, ref_factory, args, arg_types, **kwargs)
 
     def construct_simulate_and_munge(
@@ -1226,18 +1230,6 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
 
         return dut_outputs, ref_outputs
 
-    @unittest.skipIf(VIVADO_EXECUTABLE is None,
-                     'Vivado executable not in path')
-    def test_vivado_VHDL_error_raises(self):
-        '''Errors with VHDL code in Vivado should raise a RuntimeError.
-        '''
-        sim_cycles = 30
-
-        self.assertRaisesRegex(
-            RuntimeError, 'Error running the Vivado simulator',
-            vivado_cosimulation, sim_cycles, 
-            _broken_factory, self.identity_factory, 
-            self.default_args, self.default_arg_types)
 
     @unittest.skipIf(VIVADO_EXECUTABLE is None,
                      'Vivado executable not in path')
@@ -1266,7 +1258,7 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
             # We also want to drop the helpful output message to keep
             # the test clean.
             sys.stdout = open(os.devnull, "w")
-            vivado_cosimulation(
+            self.vivado_sim_wrapper(
                 sim_cycles, self.identity_factory, self.identity_factory, 
                 self.default_args, self.default_arg_types,
                 keep_temp_files=True)
@@ -1295,7 +1287,7 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
             os.environ['PATH'] = ''
             self.assertRaisesRegex(
                 EnvironmentError, 'Vivado executable not in path',
-                vivado_cosimulation, sim_cycles, 
+                self.vivado_sim_wrapper, sim_cycles, 
                 self.identity_factory, self.identity_factory, 
                 self.default_args, self.default_arg_types)
 
@@ -1306,34 +1298,17 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
 
     @unittest.skipIf(VIVADO_EXECUTABLE is None,
                      'Vivado executable not in path')
-    def test_missing_vhdl_file_raises(self):
-        '''An EnvironmentError should be raised for a missing VHDL file.
-
-        If the settings stipulate an VHDL file should be included, but it 
-        is not there, an EnvironmentError should be raised.
-        '''
-
-        self.identity_factory.ip_dependencies = ['some_other_ip']
-        sim_cycles = 10
-        self.assertRaisesRegex(
-            EnvironmentError, 'An expected xci IP file is missing', 
-            vivado_cosimulation, sim_cycles, self.identity_factory, 
-            self.identity_factory, self.default_args, self.default_arg_types)
-    
-    @unittest.skipIf(VIVADO_EXECUTABLE is None,
-                     'Vivado executable not in path')
     def test_missing_xci_file_raises(self):
         '''An EnvironmentError should be raised for a missing xci IP file.
 
         If the settings stipulate an xci file should be included, but it 
         is not there, an EnvironmentError should be raised.
         '''
-
-        self.identity_factory.vhdl_dependencies = ['a_missing_file.vhd']
+        self.identity_factory.ip_dependencies = ['some_other_ip']
         sim_cycles = 10
         self.assertRaisesRegex(
-            EnvironmentError, 'An expected vhdl file is missing', 
-            vivado_cosimulation, sim_cycles, self.identity_factory, 
+            EnvironmentError, 'An expected xci IP file is missing', 
+            self.vivado_sim_wrapper, sim_cycles, self.identity_factory, 
             self.identity_factory, self.default_args, self.default_arg_types)
 
     def test_interface_case(self):
@@ -1353,18 +1328,18 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
                 self.c = Signal(intbv(0, min=0, max=max_val))                
                 self.d = Signal(bool(0))
 
-        def identity_factory(test_input, output, reset, clock):
+        def identity_factory(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def identity():
-                output.a.next = test_input.a
-                output.b.next = test_input.b
-                output.c.next = test_input.c
-                output.d.next = test_input.d
+                test_output.a.next = test_input.a
+                test_output.b.next = test_input.b
+                test_output.c.next = test_input.c
+                test_output.d.next = test_input.d
 
             return identity            
 
         args['test_input'] = Interface()
-        args['output'] = Interface()
+        args['test_output'] = Interface()
 
         sim_cycles = 31
 
@@ -1374,3 +1349,83 @@ class TestVivadoCosimulationFunction(CosimulationTestMixin, TestCase):
 
         for signal in dut_results:
             self.assertEqual(dut_results[signal], ref_results[signal])
+
+class TestVivadoVHDLCosimulationFunction(VivadoCosimulationFunctionTests, 
+                                         TestCase):
+    '''There should be an alternative version of the cosimulation function
+    that runs the device under test through the Vivado VHDL simulator.
+    '''
+
+    def vivado_sim_wrapper(self, sim_cycles, dut_factory, ref_factory, 
+                           args, arg_types, **kwargs):
+
+        return vivado_vhdl_cosimulation(
+            sim_cycles, dut_factory, ref_factory, args, arg_types, **kwargs)
+
+    @unittest.skipIf(VIVADO_EXECUTABLE is None,
+                     'Vivado executable not in path')
+    def test_missing_hdl_file_raises(self):
+        '''An EnvironmentError should be raised for a missing HDL file.
+
+        If the settings stipulate a HDL file should be included, but it 
+        is not there, an EnvironmentError should be raised.
+        '''
+        self.identity_factory.vhdl_dependencies = ['a_missing_file.vhd']
+        sim_cycles = 10
+        self.assertRaisesRegex(
+            EnvironmentError, 'An expected HDL file is missing', 
+            self.vivado_sim_wrapper, sim_cycles, self.identity_factory, 
+            self.identity_factory, self.default_args, self.default_arg_types)
+
+    @unittest.skipIf(VIVADO_EXECUTABLE is None,
+                     'Vivado executable not in path')
+    def test_vivado_VHDL_error_raises(self):
+        '''Errors with VHDL code in Vivado should raise a RuntimeError.
+        '''
+        sim_cycles = 30
+
+        self.assertRaisesRegex(
+            VivadoError, 'Error running the Vivado VHDL simulator',
+            self.vivado_sim_wrapper, sim_cycles, 
+            _broken_factory, self.identity_factory, 
+            self.default_args, self.default_arg_types)
+
+class TestVivadoVerilogCosimulationFunction(VivadoCosimulationFunctionTests, 
+                                            TestCase):
+    '''There should be an alternative version of the cosimulation function
+    that runs the device under test through the Vivado verilog simulator.
+    '''
+
+    def vivado_sim_wrapper(self, sim_cycles, dut_factory, ref_factory, 
+                           args, arg_types, **kwargs):
+
+        return vivado_verilog_cosimulation(
+            sim_cycles, dut_factory, ref_factory, args, arg_types, **kwargs)
+
+    @unittest.skipIf(VIVADO_EXECUTABLE is None,
+                     'Vivado executable not in path')
+    def test_missing_hdl_file_raises(self):
+        '''An EnvironmentError should be raised for a missing HDL file.
+
+        If the settings stipulate a HDL file should be included, but it 
+        is not there, an EnvironmentError should be raised.
+        '''
+        self.identity_factory.verilog_dependencies = ['a_missing_file.v']
+        sim_cycles = 10
+        self.assertRaisesRegex(
+            EnvironmentError, 'An expected HDL file is missing', 
+            self.vivado_sim_wrapper, sim_cycles, self.identity_factory, 
+            self.identity_factory, self.default_args, self.default_arg_types)
+
+    @unittest.skipIf(VIVADO_EXECUTABLE is None,
+                     'Vivado executable not in path')
+    def test_vivado_verilog_error_raises(self):
+        '''Errors with Verilog code in Vivado should raise a RuntimeError.
+        '''
+        sim_cycles = 30
+
+        self.assertRaisesRegex(
+            VivadoError, 'Error running the Vivado Verilog simulator',
+            self.vivado_sim_wrapper, sim_cycles, 
+            _broken_factory, self.identity_factory, 
+            self.default_args, self.default_arg_types)

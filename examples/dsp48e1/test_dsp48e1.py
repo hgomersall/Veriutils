@@ -16,7 +16,8 @@ from .dsp48e1 import (
     DSP48E1_OPMODE_MULTIPLY_DECCUMULATE)
 
 from veriutils import (
-    myhdl_cosimulation, vivado_cosimulation, copy_signal, VIVADO_EXECUTABLE)
+    myhdl_cosimulation, vivado_vhdl_cosimulation, vivado_verilog_cosimulation,
+    copy_signal, VIVADO_EXECUTABLE)
 
 PERIOD = 10
 
@@ -562,13 +563,30 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         self.assertEqual(dut_outputs['P'], ref_outputs['P'])
 
 @unittest.skipIf(VIVADO_EXECUTABLE is None, 'Vivado executable not in path')
-class TestDSP48E1VivadoSimulation(TestDSP48E1Simulation):
+class TestDSP48E1VivadoVHDLSimulation(TestDSP48E1Simulation):
     '''The tests of TestDSP48E1Simulation should run under the Vivado 
-    simulator.
+    simulator using VHDL.
     '''
 
     def cosimulate(self, sim_cycles, dut_factory, ref_factory, args, 
                    arg_types, **kwargs):
 
-        return vivado_cosimulation(sim_cycles, dut_factory, ref_factory, 
-                                   args, arg_types, **kwargs)
+        return vivado_vhdl_cosimulation(sim_cycles, dut_factory, ref_factory, 
+                                        args, arg_types, **kwargs)
+
+
+@unittest.skip('There are problems I do not fully understand about calling '
+               'the VHDL wrapper from Verilog. Vivado complains and I am '
+               'unable to fix it.')
+@unittest.skipIf(VIVADO_EXECUTABLE is None, 'Vivado executable not in path')
+class TestDSP48E1VivadoVerilogSimulation(TestDSP48E1Simulation):
+    '''The tests of TestDSP48E1Simulation should run under the Vivado 
+    simulator using VHDL.
+    '''
+
+    def cosimulate(self, sim_cycles, dut_factory, ref_factory, args, 
+                   arg_types, **kwargs):
+
+        return vivado_verilog_cosimulation(
+            sim_cycles, dut_factory, ref_factory, 
+            args, arg_types, **kwargs)

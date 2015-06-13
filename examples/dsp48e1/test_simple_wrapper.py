@@ -6,7 +6,7 @@ import unittest
 
 from myhdl import always_seq
 from veriutils import (
-    myhdl_cosimulation, vivado_cosimulation, VIVADO_EXECUTABLE)
+    myhdl_cosimulation, vivado_vhdl_cosimulation, VIVADO_EXECUTABLE)
 
 class TestSimpleWrapperSimulation(DSP48E1TestCase):
     '''Test that wrapping a somewhat non-trivial object works fine.
@@ -59,12 +59,12 @@ class TestSimpleWrapperSimulation(DSP48E1TestCase):
 @unittest.skipIf(VIVADO_EXECUTABLE is None, 'Vivado executable not in path')
 class TestSimpleWrapperVivadoSimulation(TestSimpleWrapperSimulation):
     '''The tests of TestDSP48E1Simulation should run under the Vivado 
-    simulator.
+    simulator with VHDL.
     '''
 
     def cosimulate(self, sim_cycles, dut_factory, ref_factory, args, 
                    arg_types, **kwargs):
 
-        return vivado_cosimulation(sim_cycles, dut_factory, ref_factory, 
-                                   args, arg_types, **kwargs)
+        return vivado_vhdl_cosimulation(sim_cycles, dut_factory, ref_factory, 
+                                        args, arg_types, **kwargs)
     

@@ -30,7 +30,9 @@ if PY3:
 else:
     string_type = basestring
 
-__all__ = ['SynchronousTest', 'myhdl_cosimulation', 'vivado_cosimulation']
+__all__ = ['SynchronousTest', 'myhdl_cosimulation', 
+           'vivado_vhdl_cosimulation', 'vivado_verilog_cosimulation', 
+           'VivadoError']
 
 PERIOD = 10
 
@@ -48,38 +50,82 @@ def _file_writer(filename, signal_list, clock, signal_names=None):
     def _dummy_file_writer():
         pass
 
-    signal_str_write_list = []
-    name_str_write_list = []
+    vhdl_signal_str_write_list = []
+    vhdl_name_str_write_list = []
+    
+    verilog_signal_str_write_list = []
+    verilog_name_str_write_list = []
+
     for n, each_signal in enumerate(signal_list):
         locals()['signal_' + str(n)] = each_signal
         locals()['signal_' + str(n)].read = True
         
         if signal_names is None:
-            name_str_write_list.append(
+            vhdl_name_str_write_list.append(
                 'write(output_line, string\'(\"$signal_%d\"));' % n)
+            verilog_name_str_write_list.append(
+                '$$fwrite(output_file, \"$signal_%d\");' % n)
         else:
             # We assign the signal headers from the signal names
-            name_str_write_list.append(
+            vhdl_name_str_write_list.append(
                 'write(output_line, string\'(\"%s\"));' % signal_names[n])
+            verilog_name_str_write_list.append(
+                '$$fwrite(output_file, \"%s\");' % signal_names[n])
+
 
         if len(each_signal) == 1:
-            signal_str_write_list.append(
+            vhdl_signal_str_write_list.append(
                 'write(output_line, std_logic($signal_%d));' % n)
         else:
-            signal_str_write_list.append(
+            vhdl_signal_str_write_list.append(
                 'write(output_line, std_logic_vector($signal_%d));' % n)
-    
-    name_indent = ' ' * 12
-    name_str_write = (
-        ('\n%swrite(output_line, string\'(\",\"));\n%s' % 
-         (name_indent, name_indent))
-        .join(name_str_write_list))
 
-    signal_indent = ' ' * 8
-    signal_str_write = (
+        verilog_signal_str_write_list.append(
+            '$$fwrite(output_file, \"%%b\", $signal_%d);' % n)
+    
+    vhdl_name_indent = ' ' * 12
+    vhdl_name_str_write = (
         ('\n%swrite(output_line, string\'(\",\"));\n%s' % 
-         (signal_indent, signal_indent))
-        .join(signal_str_write_list))
+         (vhdl_name_indent, vhdl_name_indent))
+        .join(vhdl_name_str_write_list))
+
+    verilog_name_indent = ' ' * 4
+    verilog_name_str_write = (
+        ('\n%s$$fwrite(output_file, \",\");\n%s' % 
+         (verilog_name_indent, verilog_name_indent))
+        .join(verilog_name_str_write_list))
+
+    vhdl_signal_indent = ' ' * 8
+    vhdl_signal_str_write = (
+        ('\n%swrite(output_line, string\'(\",\"));\n%s' % 
+         (vhdl_signal_indent, vhdl_signal_indent))
+        .join(vhdl_signal_str_write_list))
+
+    verilog_signal_indent = ' ' * 12
+    verilog_signal_str_write = (
+        ('\n%s$$fwrite(output_file, \",\");\n%s' % 
+         (verilog_signal_indent, verilog_signal_indent))
+        .join(verilog_signal_str_write_list))
+
+    _file_writer.verilog_code = '''
+initial begin: write_to_file
+    integer output_file;
+    
+    output_file = $$fopen("%s", "w");
+
+    %s
+    $$fwrite(output_file, "\\n");
+    $$fflush(output_file);
+
+    while (1'b1) begin
+        @(posedge $clock) begin
+            %s
+            $$fwrite(output_file, "\\n");
+            $$fflush(output_file);
+        end
+    end
+end
+    ''' % (filename, verilog_name_str_write, verilog_signal_str_write,)
 
     _file_writer.vhdl_code = '''
 write_to_file: process ($clock) is
@@ -99,7 +145,7 @@ begin
         writeline(output_file, output_line);
     end if;
 end process write_to_file;
-    ''' % (filename, name_str_write, signal_str_write,)
+    ''' % (filename, vhdl_name_str_write, vhdl_signal_str_write,)
 
     return _dummy_file_writer
 
@@ -654,7 +700,7 @@ class SynchronousTest(object):
         # FIXME
         # The following code should ideally not be necessary. For some reason
         # the MyHDL conversion fails to identify the interface signals are
-        # used (perhaps due to the vhdl_code attribute in the file writer?).
+        # used (perhaps due to the v*_code attribute in the file writer?).
         # It converts, but the signals are not declared.
         # The following assigns each interface signal to an individual 
         # written signal. This seems to convert properly, but it's a bit
@@ -758,28 +804,18 @@ def myhdl_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
 
     return sim_object.cosimulate(cycles)
 
+class VivadoError(RuntimeError):
+    pass
 
-def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types, 
-                        period=PERIOD, custom_sources=None,
-                        keep_temp_files=False):
-    '''Run a cosimulation in which the device under test is simulated inside
-    Vivado.
-
-    This function has exactly the same interface as myhdl_cosimulation.
-
-    The outputs should be identical to from myhdl_cosimulation except for
-    one important caveat: until values are initialised explicitly, they 
-    are recorded as undefined. Undefined values are set to None in the output.
-
-    This is particularly noticeable in the case when an asynchronous reset
-    is used. Care should be taken to handle the outputs appropriately.
-
-    By default, all the temporary files are cleaned up after use. This 
-    behaviour can be turned off by settings ``keep_temp_files`` to ``True``.
-    '''
+def _vivado_generic_cosimulation(
+    target_language, cycles, dut_factory, ref_factory, args, 
+    arg_types, period, custom_sources, keep_temp_files):
 
     if VIVADO_EXECUTABLE is None:
         raise EnvironmentError('Vivado executable not in path')
+    
+    config = RawConfigParser()
+    config.read('veriutils.cfg')
 
     sim_object = SynchronousTest(dut_factory, ref_factory, args, arg_types, 
                                  period, custom_sources)
@@ -794,15 +830,7 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
     # We need to create the test data
     sim_object.cosimulate(cycles)
 
-    config = RawConfigParser()
-    config.read('veriutils.cfg')
-
-    # Before we mess with toVHDL, remember what it was originally.
-    toVHDL_name_state = toVHDL.name
-    toVHDL_dir_state = toVHDL.directory
-    
     tmp_dir = tempfile.mkdtemp()
-    # We now need to make sure we clean up after ourselves.
     try:
         project_name = 'tmp_project'
         project_path = os.path.join(tmp_dir, project_name)
@@ -814,44 +842,89 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
         except AttributeError:
             ip_dependencies = ()
 
-        try:
-            vhdl_dependencies = list(dut_factory.vhdl_dependencies)
-        except AttributeError:
-            vhdl_dependencies = []
-
         xci_file_list = [
             config.get('IP paths', each_ip) for each_ip in ip_dependencies]
-
-        ip_additional_vhdl_files = []
-
-        for each_ip in ip_dependencies:
-            if config.has_option('IP additional files', each_ip):
-                ip_additional_vhdl_files += [
-                    each.strip() for each in 
-                    config.get('IP additional files', each_ip).split()]
         
-        vhdl_dut_files = [os.path.join(tmp_dir, 'dut_convertible_top.vhd'),
-                          os.path.join(tmp_dir, myhdl_vhdl_package_filename)]
-
-        vhdl_files = (
-            vhdl_dependencies + vhdl_dut_files + ip_additional_vhdl_files)
-
         for each_xci_file in xci_file_list:
             # The files should all now exist
             if not os.path.exists(each_xci_file):
                 raise EnvironmentError('An expected xci IP file is missing: '
                                        '%s' % (each_xci_file))
 
+        vhdl_files = []
+        verilog_files = []
+        ip_additional_hdl_files = []
+
+        for each_ip in ip_dependencies:
+            if config.has_option('IP additional files', each_ip):
+                ip_additional_hdl_files += [
+                    each.strip() for each in 
+                    config.get('IP additional files', each_ip).split()]
+                
+        if target_language == 'VHDL':
+            try:
+                vhdl_dependencies = list(dut_factory.vhdl_dependencies)
+            except AttributeError:
+                vhdl_dependencies = []
+
+            vhdl_dut_files = [
+                os.path.join(tmp_dir, 'dut_convertible_top.vhd'),
+                os.path.join(tmp_dir, myhdl_vhdl_package_filename)]
+
+            vhdl_files += vhdl_dependencies + vhdl_dut_files
+
+            # Generate the output VHDL files
+            toVHDL.name = None
+            toVHDL.directory = tmp_dir
+
+            signal_output_filename = os.path.join(tmp_dir, 'signal_outputs')
+            toVHDL(sim_object.dut_convertible_top, signal_output_filename)
+
+        elif target_language == 'Verilog':
+            try:
+                verilog_dependencies = list(dut_factory.verilog_dependencies)
+            except AttributeError:
+                verilog_dependencies = []
+
+            verilog_dut_files = [
+                os.path.join(tmp_dir, 'dut_convertible_top.v'),]
+
+            verilog_files += verilog_dependencies + verilog_dut_files
+
+            # Generate the output Verilog files
+            toVerilog.name = None
+            toVerilog.directory = tmp_dir
+
+            signal_output_filename = os.path.join(tmp_dir, 'signal_outputs')
+            toVerilog(sim_object.dut_convertible_top, signal_output_filename)
+
+        else:
+            raise ValueError('Target language must be \'Verilog\' or '
+                             '\'VHDL\'')
+
+        for each_hdl_file in (vhdl_files + verilog_files + 
+                              ip_additional_hdl_files):
+            # The files should all now exist
+            if not os.path.exists(each_hdl_file):
+                raise EnvironmentError(
+                    'An expected HDL file is missing: %s'
+                    % (each_hdl_file))
+
         xci_files_string = ' '.join(xci_file_list)
         vhdl_files_string = ' '.join(vhdl_files)
+        verilog_files_string = ' '.join(verilog_files)
+        ip_additional_hdl_files_string = ' '.join(ip_additional_hdl_files)
 
         template_substitutions = {
+            'target_language': target_language,
             'part': config.get('General', 'part'),
             'project_name': project_name,
             'project_path': project_path,
             'time': time,
             'xci_files': xci_files_string,
-            'vhdl_files': vhdl_files_string}
+            'vhdl_files': vhdl_files_string,
+            'verilog_files': verilog_files_string,
+            'ip_additional_hdl_files': ip_additional_hdl_files_string}
 
         template_file_path = os.path.abspath(
             config.get('tcl template paths', 'simulate'))
@@ -868,19 +941,6 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
 
         with open(simulate_script_filename, 'w') as simulate_script_file:
             simulate_script_file.write(simulate_script)
-        
-        # Generate the output VHDL files
-        toVHDL.name = None
-        toVHDL.directory = tmp_dir
-
-        signal_output_filename = os.path.join(tmp_dir, 'signal_outputs')
-        toVHDL(sim_object.dut_convertible_top, signal_output_filename)
-
-        for each_vhdl_file in vhdl_files:
-            # The files should all now exist
-            if not os.path.exists(each_vhdl_file):
-                raise EnvironmentError('An expected vhdl file is missing: %s'
-                                       % (each_vhdl_file))
 
         vivado_process = subprocess.Popen(
             [VIVADO_EXECUTABLE, '-nolog', '-nojournal', '-mode', 'batch', 
@@ -890,19 +950,33 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
         out, err = vivado_process.communicate()
 
         if err != '':
+            if target_language == 'VHDL':
+                xvhdl_log_filename = os.path.join(
+                    tmp_dir, 'tmp_project', 'tmp_project.sim', 'sim_1', 
+                    'behav', 'xvhdl.log')
 
-            xvhdl_log_filename = os.path.join(
-                tmp_dir, 'tmp_project', 'tmp_project.sim', 'sim_1', 'behav', 
-                'xvhdl.log')
+                if xvhdl_log_filename in err:
+                    with open(xvhdl_log_filename, 'r') as log_file:
+                        err += '\n'
+                        err += 'xvhdl.log:\n'
+                        err += log_file.read()
 
-            if xvhdl_log_filename in err:
-                with open(xvhdl_log_filename, 'r') as log_file:
-                    err += '\n'
-                    err += 'xvhdl.log:\n'
-                    err += log_file.read()
+                raise VivadoError(
+                    'Error running the Vivado VHDL simulator:\n%s' % err)
 
-            raise RuntimeError(
-                'Error running the Vivado simulator:\n%s' % err)
+            elif target_language == 'Verilog':
+                xvhdl_log_filename = os.path.join(
+                    tmp_dir, 'tmp_project', 'tmp_project.sim', 'sim_1', 
+                    'behav', 'xvlog.log')
+
+                if xvhdl_log_filename in err:
+                    with open(xvhdl_log_filename, 'r') as log_file:
+                        err += '\n'
+                        err += 'xvlog.log:\n'
+                        err += log_file.read()
+
+                raise VivadoError(
+                    'Error running the Vivado Verilog simulator:\n%s' % err)
 
         with open(signal_output_filename, 'r') as signal_output_file:
             signal_reader = csv.DictReader(signal_output_file, delimiter=',')
@@ -993,18 +1067,91 @@ def vivado_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
             # Now only output the correct number of cycles
             ref_outputs[each_signal] = ref_outputs[each_signal][:cycles]
             dut_outputs[each_signal] = dut_outputs[each_signal][:cycles]
-
+    
     finally:
-        # Undo the changes to toVHDL
-        toVHDL.name = toVHDL_name_state
-        toVHDL.directory = toVHDL_dir_state
 
         if not keep_temp_files:
             shutil.rmtree(tmp_dir)
         else:
             print('As requested, the temporary files have not been deleted.'
                   '\nThey can be found in %s.' % (tmp_dir,))
-        
+
     return dut_outputs, ref_outputs
 
+
+def vivado_vhdl_cosimulation(
+    cycles, dut_factory, ref_factory, args, arg_types, 
+    period=PERIOD, custom_sources=None, keep_temp_files=False):
+    '''Run a cosimulation in which the device under test is simulated inside
+    Vivado, using VHDL as the intermediate language.
+
+    This function has exactly the same interface as myhdl_cosimulation.
+
+    The outputs should be identical to from myhdl_cosimulation except for
+    one important caveat: until values are initialised explicitly, they 
+    are recorded as undefined. Undefined values are set to None in the output.
+
+    This is particularly noticeable in the case when an asynchronous reset
+    is used. Care should be taken to handle the outputs appropriately.
+
+    By default, all the temporary files are cleaned up after use. This 
+    behaviour can be turned off by settings ``keep_temp_files`` to ``True``.
+    '''
+
+    # Before we mess with toVHDL, remember what it was originally.
+    toVHDL_name_state = toVHDL.name
+    toVHDL_dir_state = toVHDL.directory
+    
+    # We now need to make sure we clean up after ourselves.
+    try:
+        target_language = 'VHDL'
+
+        dut_outputs, ref_outputs = _vivado_generic_cosimulation(
+            target_language, cycles, dut_factory, ref_factory, args, 
+            arg_types, period, custom_sources, keep_temp_files)
+
+    finally:
+        # Undo the changes to toVHDL
+        toVHDL.name = toVHDL_name_state
+        toVHDL.directory = toVHDL_dir_state
+
+    return dut_outputs, ref_outputs
+
+def vivado_verilog_cosimulation(
+    cycles, dut_factory, ref_factory, args, arg_types, 
+    period=PERIOD, custom_sources=None, keep_temp_files=True):
+    '''Run a cosimulation in which the device under test is simulated inside
+    Vivado, using Verilog as the intermediate language.
+
+    This function has exactly the same interface as myhdl_cosimulation.
+
+    The outputs should be identical to from myhdl_cosimulation except for
+    one important caveat: until values are initialised explicitly, they 
+    are recorded as undefined. Undefined values are set to None in the output.
+
+    This is particularly noticeable in the case when an asynchronous reset
+    is used. Care should be taken to handle the outputs appropriately.
+
+    By default, all the temporary files are cleaned up after use. This 
+    behaviour can be turned off by settings ``keep_temp_files`` to ``True``.
+    '''
+
+    # Before we mess with toVerilog, remember what it was originally.
+    toVerilog_name_state = toVerilog.name
+    toVerilog_dir_state = toVerilog.directory
+    
+    # We now need to make sure we clean up after ourselves.
+    try:
+        target_language = 'Verilog'
+
+        dut_outputs, ref_outputs = _vivado_generic_cosimulation(
+            target_language, cycles, dut_factory, ref_factory, args, 
+            arg_types, period, custom_sources, keep_temp_files)
+
+    finally:
+        # Undo the changes to toVHDL
+        toVerilog.name = toVerilog_name_state
+        toVerilog.directory = toVerilog_dir_state
+
+    return dut_outputs, ref_outputs
 

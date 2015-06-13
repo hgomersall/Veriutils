@@ -12,10 +12,10 @@ entity DSP48E1 is
              B: in signed(17 downto 0);
              C: in signed(47 downto 0);    
              P: out signed(47 downto 0);
-             opmode: in unsigned(1 downto 0);
-             clock_enable: in std_logic;
-             reset: in std_logic;
-             clock: in std_logic
+             OPMODE: in unsigned(1 downto 0);
+             CLOCK_ENABLE: in std_logic;
+             RESET: in std_logic;
+             CLOCK: in std_logic
          );
 end entity DSP48E1;
 
