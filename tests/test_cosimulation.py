@@ -364,7 +364,7 @@ class CosimulationTestMixin(object):
         reset = self.default_args['reset']
 
         self.default_arg_types['test_input'] = 'custom'
-        seed = randrange(0x5EEDF00F)
+        seed = randrange(0, 0x5EEDF00D)
 
         custom_sources = [random_source(test_input, clock, reset, seed=seed)]
         _, ref_results = self.construct_simulate_and_munge(

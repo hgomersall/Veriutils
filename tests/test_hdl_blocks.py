@@ -806,7 +806,8 @@ class TestRandomSource(TestCase):
         seed = randrange(0, 0x5EEDF00D)
         random.seed(seed)
         
-        random.jumpahead(0)
+        # Replicate the expected random state logic
+        random.seed(randrange(0, 0x5EEDF00D))
         random_state = random.getstate()
 
         # Generate the expected data
@@ -815,7 +816,9 @@ class TestRandomSource(TestCase):
         intbv1_output += [0] # The first value is not defined yet.
 
         random.setstate(random_state)
-        random.jumpahead(0)
+        
+        random.seed(randrange(0, 0x5EEDF00D))
+
         random_state = random.getstate()
 
         intbv2_output = [randrange(min_val, max_val) for each in range(100)]
@@ -828,7 +831,8 @@ class TestRandomSource(TestCase):
         assert len(intbv2_output) == len(intbv1_output)
 
         random.setstate(random_state)
-        random.jumpahead(0)
+        random.seed(randrange(0, 0x5EEDF00D))
+
         random_state = random.getstate()
 
         bool_output = [randrange(0, 2) for each in range(100)]
@@ -837,7 +841,8 @@ class TestRandomSource(TestCase):
 
         # change the seed for the next array (it is still deterministic)
         random.setstate(random_state)
-        random.jumpahead(0)
+        random.seed(randrange(0, 0x5EEDF00D))
+
         random_state = random.getstate()
 
         enum_output = [getattr(enum_vals, random.choice(enum_names))

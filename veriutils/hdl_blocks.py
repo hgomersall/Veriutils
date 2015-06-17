@@ -201,7 +201,7 @@ def random_source(output_signal, clock, reset, seed=None,
     else:
         # Make sure we've moved the random state away from other calls to 
         # this function.
-        random.jumpahead(0)
+        random.seed(randrange(0, 0x5EEDF00D))
 
     if isinstance(output_signal, myhdl._Signal._Signal):
         return _signal_random_source(output_signal, clock, reset, 
@@ -219,7 +219,9 @@ def random_source(output_signal, clock, reset, seed=None,
             if isinstance(attribute, myhdl._Signal._Signal):
                 # We only want to generate on the signals.
                 random.setstate(random_state)
-                random.jumpahead(0) 
+                
+                random.seed(randrange(0, 0x5EEDF00D))
+
                 random_state = random.getstate()
 
                 # We've already set the random state to what we want, so
