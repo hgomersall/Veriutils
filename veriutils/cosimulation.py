@@ -809,13 +809,14 @@ class VivadoError(RuntimeError):
 
 def _vivado_generic_cosimulation(
     target_language, cycles, dut_factory, ref_factory, args, 
-    arg_types, period, custom_sources, keep_temp_files):
+    arg_types, period, custom_sources, keep_temp_files, config_file,
+    template_path_prefix):
 
     if VIVADO_EXECUTABLE is None:
         raise EnvironmentError('Vivado executable not in path')
     
     config = RawConfigParser()
-    config.read('veriutils.cfg')
+    config.read(config_file)
 
     sim_object = SynchronousTest(dut_factory, ref_factory, args, arg_types, 
                                  period, custom_sources)
@@ -927,7 +928,8 @@ def _vivado_generic_cosimulation(
             'ip_additional_hdl_files': ip_additional_hdl_files_string}
 
         template_file_path = os.path.abspath(
-            config.get('tcl template paths', 'simulate'))
+            os.path.join(template_path_prefix, 
+                         config.get('tcl template paths', 'simulate')))
 
         with open(template_file_path, 'r') as template_file:
             template_string = template_file.read()
@@ -1081,7 +1083,8 @@ def _vivado_generic_cosimulation(
 
 def vivado_vhdl_cosimulation(
     cycles, dut_factory, ref_factory, args, arg_types, 
-    period=PERIOD, custom_sources=None, keep_temp_files=False):
+    period=PERIOD, custom_sources=None, keep_temp_files=False, 
+    config_file='veriutils.cfg', template_path_prefix=''):
     '''Run a cosimulation in which the device under test is simulated inside
     Vivado, using VHDL as the intermediate language.
 
@@ -1108,7 +1111,8 @@ def vivado_vhdl_cosimulation(
 
         dut_outputs, ref_outputs = _vivado_generic_cosimulation(
             target_language, cycles, dut_factory, ref_factory, args, 
-            arg_types, period, custom_sources, keep_temp_files)
+            arg_types, period, custom_sources, keep_temp_files,
+            config_file, template_path_prefix)
 
     finally:
         # Undo the changes to toVHDL
@@ -1119,7 +1123,8 @@ def vivado_vhdl_cosimulation(
 
 def vivado_verilog_cosimulation(
     cycles, dut_factory, ref_factory, args, arg_types, 
-    period=PERIOD, custom_sources=None, keep_temp_files=False):
+    period=PERIOD, custom_sources=None, keep_temp_files=False, 
+    config_file='veriutils.cfg', template_path_prefix=''):
     '''Run a cosimulation in which the device under test is simulated inside
     Vivado, using Verilog as the intermediate language.
 
@@ -1146,7 +1151,8 @@ def vivado_verilog_cosimulation(
 
         dut_outputs, ref_outputs = _vivado_generic_cosimulation(
             target_language, cycles, dut_factory, ref_factory, args, 
-            arg_types, period, custom_sources, keep_temp_files)
+            arg_types, period, custom_sources, keep_temp_files,
+            config_file, template_path_prefix)
 
     finally:
         # Undo the changes to toVHDL
