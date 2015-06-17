@@ -18,7 +18,7 @@ import mock
 
 from veriutils import (
     VIVADO_EXECUTABLE, SynchronousTest, myhdl_cosimulation,
-    vivado_vhdl_cosimulation, VivadoError)
+    vivado_vhdl_cosimulation, VivadoError, random_source)
 
 
 class CosimulationTestMixin(object):
@@ -350,6 +350,42 @@ class CosimulationTestMixin(object):
 
         self.assertTrue(
             len(args['clock']._posedgeWaiters) == 0)
+
+    def test_signals_cleared_at_simulation_initialisation(self):
+        '''The signals should be made their expected init values before sim.
+        
+        It is possible to break simulations by forcibly changing the state
+        of a signal. Signals should be explicitly cleared prior to use in
+        order that they behave consistently with expectations
+        '''
+        sim_cycles = 30
+        test_input = self.default_args['test_input']
+        clock = self.default_args['clock']
+        reset = self.default_args['reset']
+
+        self.default_arg_types['test_input'] = 'custom'
+        seed = randrange(0x5EEDF00F)
+
+        custom_sources = [random_source(test_input, clock, reset, seed=seed)]
+        _, ref_results = self.construct_simulate_and_munge(
+            sim_cycles, self.identity_factory, self.identity_factory, 
+            self.default_args, self.default_arg_types, 
+            custom_sources=custom_sources)
+        
+        # Mess with the signal states
+        test_input._val = intbv(5, min=test_input.min, max=test_input.max)
+
+        custom_sources = [random_source(test_input, clock, reset, seed=seed)]
+        _, ref_results2 = self.construct_simulate_and_munge(
+            sim_cycles, self.identity_factory, self.identity_factory, 
+            self.default_args, self.default_arg_types, 
+            custom_sources=custom_sources)
+
+
+        for signal in ref_results:
+            # The messing should have made no difference to the sim result.
+            self.assertEqual(ref_results[signal], ref_results2[signal])
+
 
 
     def test_dut_factory_returning_None_raises(self):

@@ -520,6 +520,9 @@ class SynchronousTest(object):
         signals (in the order they were passed) of respectively the 
         device under test and the reference design.
         '''
+        for each_signal in self.args:
+            self.args[each_signal]._clear()
+
         sim = Simulation(self.random_sources + self.output_recorders + 
                          self.test_instances + self.custom_sources + 
                          [self.clockgen, self.init_reset])
