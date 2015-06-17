@@ -100,17 +100,11 @@ class CosimulationTestMixin(object):
              'reset': 'init_reset', 'clock': 'clock'})
 
     def test_single_reset(self):
-        '''The argument lists should contain one and only one reset.
+        '''The argument lists should contain at most one reset.
 
         A reset can either be an init_reset or a custom_reset. There should
-        be exactly one of either of these.
+        be at most one of either of these.
         '''
-        self.assertRaisesRegex(
-            ValueError, 'Missing reset', self.construct_simulate_and_munge, 30,
-            self.identity_factory, self.identity_factory, self.default_args,
-            {'test_input': 'custom', 'test_output': 'custom', 'reset': 'custom', 
-             'clock': 'clock'})            
-
         self.assertRaisesRegex(
             ValueError, 'Multiple resets', self.construct_simulate_and_munge, 30,
             self.identity_factory, self.identity_factory, self.default_args,
@@ -141,6 +135,39 @@ class CosimulationTestMixin(object):
             self.identity_factory, self.identity_factory, args,
             {'test_input': {'reset': 'custom_reset'}, 'test_output': 'custom', 
              'reset': 'init_reset', 'clock': 'clock'})
+
+    def test_missing_reset_ok(self):
+        '''It should be possible to have no reset and everything work fine.
+        '''
+
+        sim_cycles = 20
+        def no_reset_identity_factory(test_input, test_output, clock):
+            @always(clock.posedge)
+            def identity():
+                if __debug__:
+                    self.sim_checker(copy.copy(test_input.val))
+
+                test_output.next = test_input
+
+            return identity
+
+        del self.default_args['reset']
+        del self.default_arg_types['reset']
+
+        dut_results, ref_results = self.construct_simulate_and_munge(
+            sim_cycles, no_reset_identity_factory, no_reset_identity_factory, 
+            self.default_args, self.default_arg_types)
+
+        self.assertNotIn('reset', ref_results)
+        self.assertNotIn('reset', dut_results)
+
+        initial_output = int(self.default_args['test_output'].val)
+        remaining_output = int(self.default_args['test_input'].val)
+
+        self.assertTrue(ref_results['test_output'][0] == initial_output)
+
+        self.assertTrue(ref_results['test_output'][1:] == 
+                        ref_results['test_input'][:-1])
 
     def test_init_reset_used(self):
         '''The first two output edges should yield the init reset values.

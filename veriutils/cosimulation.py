@@ -372,11 +372,6 @@ class SynchronousTest(object):
             raise ValueError('Multiple clocks: There should be one and only '
                              'one clock in the argument list.')
 
-        if ('init_reset' not in flattened_types and
-            'custom_reset' not in flattened_types):
-            raise ValueError('Missing reset: There should be a single '
-                             'reset in the argument list.')
-
         if (flattened_types.count('init_reset') + 
             flattened_types.count('custom_reset') > 1):
 
@@ -395,10 +390,15 @@ class SynchronousTest(object):
             self.init_reset = init_reset_source(self.reset, self.clock)
             self._use_init_reset = True
 
-        else:
-            # Assume a custom reset
+        elif 'custom_reset' in flattened_types:
             self.reset = flattened_signals[
                 flattened_types.index('custom_reset')]
+            self.init_reset = ()
+
+        else:
+            # We need to create a reset to keep dependent HDL blocks happy
+            # (though it won't be driven)
+            self.reset = ResetSignal(False, active=True, async=False)
             self.init_reset = ()
 
         # Deal with random values
@@ -1119,7 +1119,7 @@ def vivado_vhdl_cosimulation(
 
 def vivado_verilog_cosimulation(
     cycles, dut_factory, ref_factory, args, arg_types, 
-    period=PERIOD, custom_sources=None, keep_temp_files=True):
+    period=PERIOD, custom_sources=None, keep_temp_files=False):
     '''Run a cosimulation in which the device under test is simulated inside
     Vivado, using Verilog as the intermediate language.
 
