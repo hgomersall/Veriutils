@@ -157,8 +157,12 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         '''The basic multiply with default Z should be the product of A and B.
         '''
 
-        self.opmode.val[:] = self.operations['multiply']
-
+        reset = self.default_args['reset']
+        clock = self.default_args['clock']
+        @always_seq(clock.posedge, reset=reset)
+        def set_opmode():
+            self.opmode.next = self.operations['multiply']
+        
         def ref(**kwargs):
 
             P = kwargs['P']
@@ -178,7 +182,8 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
 
         cycles = 20
         dut_outputs, ref_outputs = self.cosimulate(
-            cycles, DSP48E1, ref, args, arg_types)
+            cycles, DSP48E1, ref, args, arg_types, 
+            custom_sources=[set_opmode])
 
         # There are pipeline_registers cycles latency on the output. 
         # The reference above has only 1 cycle latency, so we need to offset 
@@ -189,8 +194,11 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
     def test_multiply_add(self):
         '''There should be a multiply-add mode, giving C + A * B
         '''
-
-        self.opmode.val[:] = self.operations['multiply_add']
+        reset = self.default_args['reset']
+        clock = self.default_args['clock']
+        @always_seq(clock.posedge, reset=reset)
+        def set_opmode():
+            self.opmode.next = self.operations['multiply_add']
 
         def ref(**kwargs):
 
@@ -212,11 +220,13 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
 
         cycles = 20
         dut_outputs, ref_outputs = self.cosimulate(
-            cycles, DSP48E1, ref, args, arg_types)
+            cycles, DSP48E1, ref, args, arg_types,
+            custom_sources=[set_opmode])
 
         # There are pipeline_registers cycles latency on the output. 
         # The reference above has only 1 cycle latency, so we need to offset 
         # the results by pipeline_registers - 1 cycles.
+
         self.assertEqual(dut_outputs['P'][self.pipeline_registers - 1:], 
                          ref_outputs['P'][:-(self.pipeline_registers - 1)])
 
@@ -228,7 +238,11 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         the output should always be incremented by A*B as long as the 
         multiply-accumulate is ongoing.
         '''
-        self.opmode.val[:] = self.operations['multiply_accumulate']        
+        reset = self.default_args['reset']
+        clock = self.default_args['clock']
+        @always_seq(clock.posedge, reset=reset)
+        def set_opmode():
+            self.opmode.next = self.operations['multiply_accumulate']
 
         def ref(**kwargs):
 
@@ -250,7 +264,8 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         # Don't run too many cycles or you'll get an overflow!
         cycles = 20
         dut_outputs, ref_outputs = self.cosimulate(
-            cycles, DSP48E1, ref, args, arg_types)
+            cycles, DSP48E1, ref, args, arg_types,
+            custom_sources=[set_opmode])
 
         # There are pipeline_registers cycles latency on the output. 
         # The reference above has only 1 cycle latency, so we need to offset 
@@ -265,7 +280,11 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         the output should be negated on every cycle and then incremented by 
         A*B as long as the multiply-deccumulate is ongoing.
         '''
-        self.opmode.val[:] = self.operations['multiply_deccumulate']        
+        reset = self.default_args['reset']
+        clock = self.default_args['clock']
+        @always_seq(clock.posedge, reset=reset)
+        def set_opmode():
+            self.opmode.next = self.operations['multiply_deccumulate']
 
         def ref(**kwargs):
 
@@ -288,7 +307,8 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         # Don't run too many cycles or you'll get an overflow!
         cycles = 20
         dut_outputs, ref_outputs = self.cosimulate(
-            cycles, DSP48E1, ref, args, arg_types)
+            cycles, DSP48E1, ref, args, arg_types,
+            custom_sources=[set_opmode])
 
         # There are pipeline_registers cycles latency on the output. 
         # The reference above has only 1 cycle latency, so we need to offset 

@@ -251,6 +251,60 @@ def _deinterfacer(interface, assignment_dict):
     
     return assigner_blocks
 
+def _create_flattened_args(args, arg_types):
+    # Turn all the interfaces into just another signal in the list
+
+    arg_list = sorted(args.keys())    
+    non_signal_list = []
+    flattened_args = {}
+    flattened_arg_types = {}
+    interface_lookup = {}
+    for each_arg_name in arg_list:
+
+        if arg_types[each_arg_name] == 'non-signal':
+            non_signal_list.append(each_arg_name)
+        else:
+            each_signal_name = each_arg_name
+
+        each_signal_obj = args[each_signal_name]
+
+        _signal_list, attribute_name_list = (
+            _expand_to_signal_list(each_signal_obj))
+
+        hierarchy_types = _types_from_signal_hierarchy(
+            attribute_name_list, arg_types[each_signal_name])
+
+        if len(_signal_list) == 1:
+            flattened_args[each_signal_name] = _signal_list[0]
+            flattened_arg_types[each_signal_name] = (
+                arg_types[each_signal_name])
+        else:
+            n = 0
+            # The following currently only works with one level of
+            # interface hierarchy
+            for each_sub_signal, each_interface_lookup, each_type in zip(
+                _signal_list, attribute_name_list, hierarchy_types):
+
+                # Get a unique signal name
+                while True:
+                    sub_signal_name = each_signal_name + str(n)
+                    n += 1                        
+                    if sub_signal_name not in arg_list:
+                        break
+
+                flattened_args[sub_signal_name] = each_sub_signal
+                # As we said above, we only support one level of
+                # hierarchy. This means the type is simply stored in
+                # `each_type` as follows.
+                flattened_arg_types[sub_signal_name] = (
+                    each_type[1][0])
+
+                interface_lookup[sub_signal_name] = (
+                    each_signal_name, each_interface_lookup)
+
+    return (non_signal_list, flattened_args, flattened_arg_types, 
+            interface_lookup)
+
 
 class SynchronousTest(object):
 
@@ -360,7 +414,6 @@ class SynchronousTest(object):
                     
                     flattened_types.append(types[name])
                     flattened_signals.append(signal_objs[name])
-
 
         _arg_checker(args, arg_types)
 
@@ -520,8 +573,15 @@ class SynchronousTest(object):
         signals (in the order they were passed) of respectively the 
         device under test and the reference design.
         '''
-        for each_signal in self.args:
-            self.args[each_signal]._clear()
+
+        # We initially need to clear all the signals to bring them to
+        # a defined initial state.
+        (non_signal_list, flattened_args, 
+         flattened_arg_types, interface_lookup) = (
+             _create_flattened_args(self.args, self.arg_types))
+
+        for each_signal in flattened_args:
+            flattened_args[each_signal]._clear()
 
         sim = Simulation(self.random_sources + self.output_recorders + 
                          self.test_instances + self.custom_sources + 
@@ -561,55 +621,9 @@ class SynchronousTest(object):
         reset = self.reset
         ref_outputs = self.outputs[1]
 
-        arg_list = sorted(self.args.keys())
-        non_signal_list = []
-
-        # Turn all the interfaces into just another signal in the list
-        flattened_args = {}
-        flattened_arg_types = {}
-        interface_lookup = {}
-        for each_arg_name in arg_list:
-
-            if self.arg_types[each_arg_name] == 'non-signal':
-                non_signal_list.append(each_arg_name)
-            else:
-                each_signal_name = each_arg_name
-
-            each_signal_obj = self.args[each_signal_name]
-
-            _signal_list, attribute_name_list = (
-                _expand_to_signal_list(each_signal_obj))
-
-            hierarchy_types = _types_from_signal_hierarchy(
-                attribute_name_list, self.arg_types[each_signal_name])
-
-            if len(_signal_list) == 1:
-                flattened_args[each_signal_name] = _signal_list[0]
-                flattened_arg_types[each_signal_name] = (
-                    self.arg_types[each_signal_name])
-            else:
-                n = 0
-                # The following currently only works with one level of
-                # interface hierarchy
-                for each_sub_signal, each_interface_lookup, each_type in zip(
-                    _signal_list, attribute_name_list, hierarchy_types):
-
-                    # Get a unique signal name
-                    while True:
-                        sub_signal_name = each_signal_name + str(n)
-                        n += 1                        
-                        if sub_signal_name not in arg_list:
-                            break
-
-                    flattened_args[sub_signal_name] = each_sub_signal
-                    # As we said above, we only support one level of
-                    # hierarchy. This means the type is simply stored in
-                    # `each_type` as follows.
-                    flattened_arg_types[sub_signal_name] = (
-                        each_type[1][0])
-
-                    interface_lookup[sub_signal_name] = (
-                        each_signal_name, each_interface_lookup)
+        (non_signal_list, flattened_args, 
+         flattened_arg_types, interface_lookup) = (
+             _create_flattened_args(self.args, self.arg_types))
 
         # Convert ref_outputs to be valid with our flattened signal list
         # i.e. convert the interface recordings into just another signal
