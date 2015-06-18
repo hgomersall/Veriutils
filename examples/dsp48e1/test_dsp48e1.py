@@ -322,9 +322,11 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         When clock_enable is False, the DSP48E1 should remain in an unchanged
         state until it is True again, unless the reset signal is active.
         '''
-        
-        # just use some mode.
-        self.opmode.val[:] = self.operations['multiply']
+        reset = self.default_args['reset']
+        clock = self.default_args['clock']
+        @always_seq(clock.posedge, reset=reset)
+        def set_opmode():
+            self.opmode.next = self.operations['multiply']
 
         def ref(**kwargs):
 
@@ -385,7 +387,8 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         # Don't run too many cycles or you'll get an overflow!
         cycles = 40
         dut_outputs, ref_outputs = self.cosimulate(
-            cycles, DSP48E1, ref, args, arg_types)
+            cycles, DSP48E1, ref, args, arg_types,
+            custom_sources=[set_opmode])
 
         self.assertEqual(dut_outputs['P'], ref_outputs['P'])
 
@@ -394,9 +397,11 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
 
         The reset should always happen if reset is active on a clock edge.
         '''
-        
-        # just use some mode.
-        self.opmode.val[:] = self.operations['multiply']
+        reset = self.default_args['reset']
+        clock = self.default_args['clock']
+        @always_seq(clock.posedge, reset=reset)
+        def set_opmode():
+            self.opmode.next = self.operations['multiply']
 
         def ref(**kwargs):
 
@@ -460,7 +465,7 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         cycles = 40
         dut_outputs, ref_outputs = self.cosimulate(
             cycles, DSP48E1, ref, args, arg_types, 
-            custom_sources=custom_sources)
+            custom_sources=custom_sources+[set_opmode])
 
         self.assertEqual(dut_outputs['reset'], ref_outputs['reset'])
         self.assertEqual(dut_outputs['P'], ref_outputs['P'])
