@@ -776,6 +776,73 @@ class TestRandomSource(TestCase):
         sim = Simulation(clockgen, dut, output_check)
         sim.run(quiet=1)
 
+    def test_signal_list(self):
+        '''It should be possible to generate random values for a signal list.
+
+        Non signals in the list are simply ignored.
+        '''
+
+        N = 20
+        test_list = [
+            Signal(intbv(0, min=-2**n, max=(2**n)-1)) for n in range(1, N+1)]
+
+        test_list.append('Not a signal')
+        test_list[10] = ['also not a signal']
+
+        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+
+        # Set the initial seed
+        seed = randrange(0, 0x5EEDF00D)
+        random.seed(seed)
+        
+        # Replicate the expected random state logic
+        random.seed(randrange(0, 0x5EEDF00D))
+        random_state = random.getstate()
+
+        outputs = []
+        stripped_test_list = []
+        for each_signal in test_list:
+
+            if not isinstance(each_signal, myhdl._Signal._Signal):
+                continue
+
+            stripped_test_list.append(each_signal)
+
+            each_signal_output = [
+                randrange(each_signal.min, each_signal.max) for 
+                each in range(100)]
+
+            each_signal_output.reverse()
+            each_signal_output += [0] # The first value is not defined yet.
+
+            outputs.append(each_signal_output)
+
+            # seed a new value
+            random.setstate(random_state)            
+            random.seed(randrange(0, 0x5EEDF00D))
+            random_state = random.getstate()
+        
+        # None of the data vectors should be the same as any other
+        data_hashes = [hash(tuple(each)) for each in outputs]
+        # asserts all the hashes are unique
+        assert len(set(data_hashes)) == len(outputs) 
+
+        @always_seq(self.clock.posedge, reset_signal)
+        def output_check():
+            try:
+                for n in range(len(outputs)):
+                    self.assertEqual(outputs[n].pop(), stripped_test_list[n])
+
+            except IndexError:
+                raise StopSimulation
+
+        dut = random_source(test_list, self.clock, reset_signal, seed)
+
+        clockgen = clock_source(self.clock, self.clock_period)
+
+        sim = Simulation(clockgen, dut, output_check)
+        sim.run(quiet=1)
+
     def test_interface_signal(self):
         '''It should be possible to generate random interface signals.
         '''
@@ -916,7 +983,7 @@ class TestRecorderSink(TestCase):
         self.assertEqual(test_output, recorded_output)
 
     def test_correct_interface_recording(self):
-        '''It should record interfaces as a list of tuples of signal values.
+        '''It should record interfaces as a list of dicts of signal values.
         '''
         min_val = -999
         max_val = 999
@@ -946,6 +1013,38 @@ class TestRecorderSink(TestCase):
 
         source = random_source(test_signal, self.clock, self.reset)
         sink, recorded_output = recorder_sink(test_signal, self.clock)
+        clockgen = clock_source(self.clock, self.clock_period)
+
+        sim = Simulation(clockgen, source, sink, test_recorder)
+        sim.run(duration=self.clock_period * 30, quiet=1)
+
+        self.assertEqual(test_output, recorded_output)
+
+    def test_correct_signal_list_recording(self):
+        '''It should record signal lists as a list of lists of signal values.
+        '''
+
+        N = 10
+        test_signal_list = [
+            Signal(intbv(0, min=-2**n, max=2**n-1)) for n in range(1, N+1)]
+
+        test_signal_list[5] = 'not a signal'
+        valid_signals = [each for each in test_signal_list if 
+                         isinstance(each, myhdl._Signal._Signal)]
+
+        test_output = []
+
+        @always_seq(self.clock.posedge, reset=self.reset)
+        def test_recorder():
+            each_output = [None] * len(valid_signals)
+
+            for n in range(len(valid_signals)):
+                each_output[n] = copy.copy(valid_signals[n].val)
+            
+            test_output.append(each_output)
+
+        source = random_source(test_signal_list, self.clock, self.reset)
+        sink, recorded_output = recorder_sink(test_signal_list, self.clock)
         clockgen = clock_source(self.clock, self.clock_period)
 
         sim = Simulation(clockgen, source, sink, test_recorder)

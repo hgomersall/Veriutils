@@ -500,6 +500,87 @@ class CosimulationTestMixin(object):
         for signal in dut_results:
             self.assertEqual(dut_results[signal], ref_results[signal])
 
+    def test_signal_list_arg(self):
+        '''It should be possible to work with lists of signals.
+
+        If the list contains non-signals, they are ignored.
+        '''
+
+        args = self.default_args.copy()
+
+        N = 20
+        input_signal_list = [
+            Signal(intbv(0, min=-2**n, max=2**n-1)) for n in range(1, N+1)]
+
+        # In the test we stick a non-signal at the end of the list to 
+        # make sure it is handled ok.
+        input_signal_list.append('not a signal')
+
+        output_signal_list = [
+            Signal(intbv(0, min=-2**n, max=2**n-1)) for n in range(1, N+1)]
+        
+        output_signal_list.append('not a signal')
+
+        def identity_factory(test_input, test_output, reset, clock):
+            @always_seq(clock.posedge, reset=reset)
+            def identity():
+                if __debug__:
+                    # The last value in the list is not a Signal
+                    input_vals = (
+                        copy.copy(each.val) for each in test_input[:-1])
+
+                    self.sim_checker(*input_vals)
+
+                for i in range(N):
+                    test_output[i].next = test_input[i]
+
+            return identity            
+
+        args['test_input'] = input_signal_list
+        args['test_output'] = output_signal_list
+
+        sim_cycles = 31
+
+        dut_results, ref_results = self.construct_simulate_and_munge(
+            sim_cycles, identity_factory, identity_factory, 
+            args, self.default_arg_types)
+
+        # The mock should be called twice per cycle, with the caveat that
+        # it is not called at all on the reset cycles.
+        assert len(self.sim_checker.call_args_list) == (
+            (sim_cycles - self.reset_cycles) * 2)
+
+        # The expected calls are found from what is recorded on the output.
+        # These are recorded even during reset cycles, so we need to offset
+        # those. 
+        # Also we record one cycle delayed from the sim_checker mock above,
+        # so we need to offset left by that too.
+
+        dut_expected_mock_calls = [
+            mock.call(*(each_sig for each_sig in each)) 
+            for each in dut_results['test_output'][self.reset_cycles:][1:]]
+
+        ref_expected_mock_calls = [
+            mock.call(*(each_sig for each_sig in each)) 
+            for each in dut_results['test_output'][self.reset_cycles:][1:]]
+
+        # The sim checker args should be shifted up by one sample since
+        # they record a sample earlier than the recorded outputs.
+        out_signals = zip(self.sim_checker.call_args_list[::2][:-1],
+                          self.sim_checker.call_args_list[1::2][:-1],
+                          dut_expected_mock_calls,
+                          ref_expected_mock_calls)
+
+        for dut_arg, ref_arg, expected_dut, expected_ref in out_signals:
+            # Should be true (defined by the test)
+            assert dut_arg == ref_arg
+
+            self.assertEqual(dut_arg, expected_dut)
+            self.assertEqual(ref_arg, expected_ref)
+
+        for signal in dut_results:
+            self.assertEqual(dut_results[signal], ref_results[signal])
+
     def test_invalid_signal_type(self):
         '''If the arg type is not a valid type, a ValueError should be raised.
         '''
@@ -1090,6 +1171,76 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
             toVHDL.directory = toVHDL_directory_state
             shutil.rmtree(tmp_dir)
 
+    def test_dut_convertible_top_with_signal_list(self):
+        '''Convertible top duts with signal lists should be supported.
+        
+        The dut_convertible_top method should be able to handle signal lists.
+        Non-signals in the list should be ignored, and the signals can be
+        of different sizes.
+        '''
+        args = self.default_args.copy()
+        arg_types = self.default_arg_types.copy()
+
+        N = 5
+        missing_sig_idx = 3
+        input_signal_list = [
+            Signal(intbv(0, min=-2**n, max=2**n-1)) for n in range(1, N+1)]
+
+        input_signal_list[missing_sig_idx] = 'not a signal'
+
+        output_signal_list = [
+            Signal(intbv(0, min=-2**n, max=2**n-1)) for n in range(1, N+1)]
+
+        output_signal_list[missing_sig_idx] = 'also not a signal'
+
+        def dut(test_input, test_output, reset, clock):
+            # We're dealing with the more general case of arbitrary
+            # values in the list.
+            # The specific problem of lists in the convertible code is a 
+            # MyHDL problem.
+            def sig_copy(single_test_input, single_test_output, reset, clock):
+
+                @always_seq(clock.posedge, reset=reset)
+                def sig_copy_inst():
+                    single_test_output.next = single_test_input
+
+                return sig_copy_inst
+
+            instances = []
+            for i in range(N):
+                if i is not missing_sig_idx:
+                    instances.append(
+                        sig_copy(test_input[i], test_output[i], reset, clock))
+
+            return instances
+
+        args['test_input'] = input_signal_list
+        args['test_output'] = output_signal_list
+
+        simulated_input_cycles = 20
+
+        test_obj = SynchronousTest(dut, dut, args, arg_types)
+
+        tmp_dir = tempfile.mkdtemp()
+        temp_file = os.path.join(tmp_dir, 'test_file')
+
+        output_file = os.path.join(tmp_dir, 'dut_convertible_top.vhd')
+
+        test_obj.cosimulate(simulated_input_cycles)
+
+        # remember the toVHDL.directory state
+        try:
+            toVHDL_directory_state = toVHDL.directory
+            toVHDL.directory = tmp_dir
+
+            toVHDL(test_obj.dut_convertible_top, temp_file)
+
+            self.assertTrue(os.path.exists(output_file))
+
+        finally:
+            toVHDL.directory = toVHDL_directory_state
+            shutil.rmtree(tmp_dir)
+
     def test_ref_uses_original_output(self):
         '''It should be the ref_factory that gets the original output signal.
 
@@ -1412,6 +1563,45 @@ class VivadoCosimulationFunctionTests(CosimulationTestMixin):
 
         for signal in dut_results:
             self.assertEqual(dut_results[signal], ref_results[signal])
+
+    def test_signal_list_arg(self):
+        '''It should be possible to work with lists of signals.
+
+        If the list contains non-signals, they are ignored.
+        '''
+
+        args = self.default_args.copy()
+
+        # We need to overwrite the parent implemented version in order
+        # to create a test that will convert properly.
+        N = 20
+        n = 8
+        input_signal_list = [
+            Signal(intbv(0, min=-2**n, max=2**n-1)) for _ in range(1, N+1)]
+
+        output_signal_list = [
+            Signal(intbv(0, min=-2**n, max=2**n-1)) for _ in range(1, N+1)]
+
+        def identity_factory(test_input, test_output, reset, clock):
+            @always_seq(clock.posedge, reset=reset)
+            def identity():
+                for i in range(N):
+                    test_output[i].next = test_input[i]
+
+            return identity            
+
+        args['test_input'] = input_signal_list
+        args['test_output'] = output_signal_list
+
+        sim_cycles = 31
+
+        dut_results, ref_results = self.construct_simulate_and_munge(
+            sim_cycles, identity_factory, identity_factory, 
+            args, self.default_arg_types)
+
+        for signal in dut_results:
+            self.assertEqual(dut_results[signal], ref_results[signal])
+
 
 class TestVivadoVHDLCosimulationFunction(VivadoCosimulationFunctionTests, 
                                          TestCase):

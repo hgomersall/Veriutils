@@ -208,28 +208,37 @@ def random_source(output_signal, clock, reset, seed=None,
                                      edge_sensitivity)
 
     else:
+        signal_list = []
+
+        if isinstance(output_signal, list):
+            for each_signal in output_signal:
+                if isinstance(each_signal, myhdl._Signal._Signal):
+                    signal_list.append(each_signal)
+
+        else:
+            attribute_names = sorted(output_signal.__dict__)
+            for attribute_name in attribute_names:
+                attribute = getattr(output_signal, attribute_name)
+                if isinstance(attribute, myhdl._Signal._Signal):
+                    signal_list.append(attribute)
+
+        # We need to get the random state in order that we can set it
+        # on the first loop iteration.
         random_state = random.getstate()
 
-        attribute_names = sorted(output_signal.__dict__)
         sources = []
-        for attribute_name in attribute_names:
+        for each_signal in signal_list:
 
-            attribute = getattr(output_signal, attribute_name)
+            # We only want to generate on the signals.
+            random.setstate(random_state)
+            
+            random.seed(randrange(0, 0x5EEDF00D))
 
-            if isinstance(attribute, myhdl._Signal._Signal):
-                # We only want to generate on the signals.
-                random.setstate(random_state)
-                
-                random.seed(randrange(0, 0x5EEDF00D))
+            random_state = random.getstate()
 
-                random_state = random.getstate()
-
-                # We've already set the random state to what we want, so
-                # request that _signal_random_source leave it alone with
-                # deterministic_output=True
-                sources.append(
-                    _signal_random_source(attribute, clock, reset, 
-                                          edge_sensitivity=edge_sensitivity))
+            sources.append(
+                _signal_random_source(each_signal, clock, reset, 
+                                      edge_sensitivity=edge_sensitivity))
 
 
         return sources
@@ -241,6 +250,10 @@ def recorder_sink(signal, clock, edge_sensitivity='posedge'):
 
     A list is returned alongside the myhdl instance which is appended on 
     each clock cycle with the next value given on `signal`
+
+    If the signal is a list, then each value appended is a list, with
+    entries given only by the Signals in the list, in the same order. 
+    Non-signals are ignored.
 
     If the signal is an interface, each value appended is a dictionary, with
     keys provided by the attribute names making up the interface. Only
@@ -259,29 +272,40 @@ def recorder_sink(signal, clock, edge_sensitivity='posedge'):
 
     reset_signal = ResetSignal(bool(0), active=1, async=False)
 
-    if isinstance(signal, myhdl._Signal._Signal):
-        signal_is_interface = False
-    else:
-        signal_is_interface = True
-
     recorded_output = []
 
-    @always_seq(edge, reset_signal)
-    def recorder():
 
-        if not signal_is_interface:
-            recorded_output.append(copy.copy(signal.val))
-        else:
-            interface_signals = {
-                key: signal.__dict__[key] for key in signal.__dict__ if 
-                isinstance(signal.__dict__[key], myhdl._Signal._Signal)}
-
-            _recorded_output = {key: copy.copy(interface_signals[key].val) 
-                                for key in interface_signals}
-
+    if isinstance(signal, myhdl._Signal._Signal):
+        @always_seq(edge, reset_signal)
+        def recorder():
+            _recorded_output = copy.copy(signal.val)
             recorded_output.append(_recorded_output)
 
+    else:
+
+        if isinstance(signal, list):
+
+            @always_seq(edge, reset_signal)
+            def recorder():
+                _recorded_output = [
+                    copy.copy(each_sig.val) for each_sig in signal if 
+                    isinstance(each_sig, myhdl._Signal._Signal)]
+                recorded_output.append(_recorded_output)
+
+        else:
+
+            @always_seq(edge, reset_signal)
+            def recorder():
+                interface_signals = {
+                    key: signal.__dict__[key] for key in signal.__dict__ if 
+                    isinstance(signal.__dict__[key], myhdl._Signal._Signal)}
+                
+                _recorded_output = {key: copy.copy(interface_signals[key].val) 
+                                    for key in interface_signals}
+                recorded_output.append(_recorded_output)
+
     return recorder, recorded_output
+
 
 def lut_signal_driver(signal, drive_lut, clock, edge_sensitivity='posedge'):
     '''Drive the output from a look-up table. The lookup table is defined by
