@@ -786,9 +786,8 @@ class SynchronousTest(object):
 
         # FIXME
         # The following code should ideally not be necessary. For some reason
-        # the MyHDL conversion fails to identify the interface and list 
-        # signals are used (perhaps due to the v*_code attribute in the file 
-        # writer?).
+        # the MyHDL conversion fails to identify the interface signals that
+        # are used (perhaps due to the v*_code attribute in the file writer?).
         # It converts, but the signals are not declared.
         # The following assigns each interface signal to an individual 
         # written signal. This seems to convert properly, but it's a bit
