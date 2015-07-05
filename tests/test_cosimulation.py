@@ -42,8 +42,10 @@ class CosimulationTestMixin(object):
                              'reset': self.reset,
                              'clock': self.clock}
 
-        self.default_arg_types = {'test_input': 'random', 'test_output': 'output', 
-                                  'reset': 'init_reset', 'clock': 'clock'}
+        self.default_arg_types = {'test_input': 'random', 
+                                  'test_output': 'output', 
+                                  'reset': 'init_reset', 
+                                  'clock': 'clock'}
         
         self.sim_checker = mock.Mock()
         def identity_factory(test_input, test_output, reset, clock):
@@ -314,6 +316,92 @@ class CosimulationTestMixin(object):
 
         for signal in dut_results:
             self.assertEqual(dut_results[signal], ref_results[signal])
+
+
+    def test_disagreeing_outputs(self):
+        '''When the factories disagree, the results should not be the same.
+        '''
+
+        sim_cycles = 30
+
+        args = self.default_args.copy()
+        arg_types = self.default_arg_types.copy()
+
+        N = 20
+        n = 8
+        input_signal_list = [
+            Signal(intbv(0, min=-2**n, max=2**n-1)) for _ in range(1, N+1)]
+
+        output_signal_list = [
+            Signal(intbv(0, min=-2**n, max=2**n-1)) for _ in range(1, N+1)]
+
+        args['test_input_list'] = input_signal_list
+        args['test_output_list'] = output_signal_list
+        arg_types['test_input_list'] = 'random'
+        arg_types['test_output_list'] = 'output'
+
+        min_val = -1000
+        max_val = 1000
+
+        class Interface(object):
+            def __init__(self):
+                self.a = Signal(intbv(0, min=min_val, max=max_val))
+                self.b = Signal(intbv(0, min=min_val, max=max_val))        
+
+        args['test_input_interface'] = Interface()
+        args['test_output_interface'] = Interface()
+        arg_types['test_input_interface'] = 'random'
+        arg_types['test_output_interface'] = 'output'
+
+        def identity_factory(
+            test_input, test_input_list, test_input_interface,
+            test_output, test_output_list, test_output_interface,
+            reset, clock):
+
+            @always_seq(clock.posedge, reset=reset)
+            def identity():
+
+                test_output.next = test_input
+
+                for n in range(N):
+                    test_output_list[n].next = test_input_list[n]
+
+                test_output_interface.a.next = test_input_interface.a
+                test_output_interface.b.next = test_input_interface.b
+
+
+            return identity
+
+        def not_identity_factory(
+            test_input, test_input_list, test_input_interface,
+            test_output, test_output_list, test_output_interface,
+            reset, clock):
+
+            @always_seq(clock.posedge, reset=reset)
+            def not_identity():
+
+                test_output.next = test_input - test_input
+
+                for n in range(N):
+                    test_output_list[n].next = (
+                        test_input_list[n] - test_input_list[n])
+
+                test_output_interface.a.next = (
+                    test_input_interface.a - test_input_interface.a)
+                test_output_interface.b.next = (
+                    test_input_interface.b - test_input_interface.b)
+
+
+            return not_identity
+
+
+        dut_results, ref_results = self.construct_simulate_and_munge(
+            sim_cycles, not_identity_factory, identity_factory, 
+            args, arg_types)
+
+        for signal in (
+            'test_output', 'test_output_interface', 'test_output_list'):
+            self.assertNotEqual(dut_results[signal], ref_results[signal])
 
     def test_simulation_cleans_up(self):
         '''The simulation should clean up afterwards.

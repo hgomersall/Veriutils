@@ -1178,6 +1178,8 @@ def _vivado_generic_cosimulation(
             for each_list_out in zip(*ordered_siglist_output.values()):
                 new_dut_output.append(list(each_list_out))
 
+            dut_outputs[each_siglist] = new_dut_output            
+
         for each_interface in interface_outputs:
 
             attr_names = interface_outputs[each_interface].keys()
