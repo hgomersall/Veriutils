@@ -6,9 +6,22 @@ from math import log, floor
 __all__ = ['check_intbv_signal', 'check_bool_signal', 'check_reset_signal']
 
 def check_intbv_signal(test_signal, name, correct_width=None, signed=None, 
-                       val_range=None):
+                       val_range=None, range_test='inside'):
     '''Check the passed signal is a satisfactory convertible signal. If it 
     is not, raise a ValueError with a suitable error message.
+
+    The range is set from one of either ``correct_width`` and (optionally) 
+    ``signed`` or ``val_range``.
+
+    The three possible values for ``range_test`` are ``'inside'``, 
+    ``'outside'`` and ``'exact'``. For values ``val_range = (n, p)``, each
+    asserts the following is true:
+        ``'inside'``: ``test_signal.min >= n``, ``test_signal.max <= p``
+        ``'outside'``: ``test_signal.min <= n``, ``test_signal.max >= p``
+        ``'exact'``: ``test_signal.min == n``, ``test_signal.max == p``
+
+    ``correct_width`` checks the signal is of a specific correct width. If
+    ``signed`` is set, it also checks the signedness of the signal.
     '''
 
     if correct_width is None and val_range is None:
@@ -70,9 +83,27 @@ def check_intbv_signal(test_signal, name, correct_width=None, signed=None,
         raise ValueError('Port %s should be an unsigned intbv signal.' %
                          (name,))
 
-    if signal_min < val_range[0] or signal_max > val_range[1]:
-        raise ValueError('Port %s should be in the range [%d, %d).' % 
-                         (name, val_range[0], val_range[1]))
+    if range_test == 'inside':
+        if signal_min < val_range[0] or signal_max > val_range[1]:
+            raise ValueError('Port %s.min should be >= %d and port %s.max '
+                             'should be <= %d.' % 
+                             (name, val_range[0], name, val_range[1]))
+
+    elif range_test == 'outside':
+        if signal_min > val_range[0] or signal_max < val_range[1]:
+            raise ValueError('Port %s.min should be <= %d and port %s.max '
+                             'should be >= %d.' % 
+                             (name, val_range[0], name, val_range[1]))
+
+    elif range_test == 'exact':
+        if signal_min != val_range[0] or signal_max != val_range[1]:
+            raise ValueError('Port %s.min should be == %d and port %s.max '
+                             'should be == %d.' % 
+                             (name, val_range[0], name, val_range[1]))
+
+    else:
+        raise ValueError('`range_test` should be one of \'inside\', '
+                         '\'outside\' or \'exact\'')
 
 def check_bool_signal(test_signal, name):
     
