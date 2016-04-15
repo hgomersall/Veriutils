@@ -686,16 +686,10 @@ class SynchronousTest(object):
 
             locals().update(signal_dict)
 
-            print(locals())
-
             return tuple(self.random_sources + self.output_recorders + 
                          self.test_instances + self.custom_sources + 
                          [self.clockgen, self.init_reset])
 
-        #tb_wrapper.__name__ = 'bleh'
-        #tb_wrapper()
-
-        #tb = traceSignals(tb_wrapper)
 
         @block
         def top():
@@ -734,6 +728,14 @@ class SynchronousTest(object):
                     custom_sources, [clockgen, init_reset]]
 
         top_level_block = top()
+
+        if vcd_name is not None:
+            traceSignals.name = vcd_name
+            trace = True
+        else:
+            trace = False
+        
+        top_level_block.config_sim(trace=trace)
         top_level_block.run_sim(duration=cycles*self.period, quiet=1)
         top_level_block.quit_sim()
 
@@ -983,7 +985,7 @@ class SynchronousTest(object):
         return instances
 
 def myhdl_cosimulation(cycles, dut_factory, ref_factory, args, arg_types, 
-                       period=PERIOD, custom_sources=None):
+                       period=PERIOD, custom_sources=None, vcd_name=None):
     '''Run a cosimulation of a pair of MyHDL instances. This is a thin 
     wrapper around a :class:`SynchronousTest` object, in which the object 
     is created and then the cosimulate method is run, with the ``cycles``
@@ -996,7 +998,7 @@ def myhdl_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
     sim_object = SynchronousTest(dut_factory, ref_factory, args, arg_types, 
                                  period, custom_sources)
 
-    return sim_object.cosimulate(cycles)
+    return sim_object.cosimulate(cycles, vcd_name=vcd_name)
 
 class VivadoError(RuntimeError):
     pass
@@ -1004,7 +1006,7 @@ class VivadoError(RuntimeError):
 def _vivado_generic_cosimulation(
     target_language, cycles, dut_factory, ref_factory, args, 
     arg_types, period, custom_sources, keep_temp_files, config_file,
-    template_path_prefix):
+    template_path_prefix, vcd_name):
 
     if VIVADO_EXECUTABLE is None:
         raise EnvironmentError('Vivado executable not in path')
@@ -1023,7 +1025,7 @@ def _vivado_generic_cosimulation(
     _cycles = cycles + 2
 
     # We need to create the test data
-    sim_object.cosimulate(cycles)
+    sim_object.cosimulate(cycles, vcd_name=vcd_name)
 
     tmp_dir = tempfile.mkdtemp()
     try:
@@ -1310,7 +1312,7 @@ def _vivado_generic_cosimulation(
 def vivado_vhdl_cosimulation(
     cycles, dut_factory, ref_factory, args, arg_types, 
     period=PERIOD, custom_sources=None, keep_temp_files=False, 
-    config_file='veriutils.cfg', template_path_prefix=''):
+    config_file='veriutils.cfg', template_path_prefix='', vcd_name=None):
     '''Run a cosimulation in which the device under test is simulated inside
     Vivado, using VHDL as the intermediate language.
 
@@ -1332,14 +1334,14 @@ def vivado_vhdl_cosimulation(
     dut_outputs, ref_outputs = _vivado_generic_cosimulation(
         target_language, cycles, dut_factory, ref_factory, args, 
         arg_types, period, custom_sources, keep_temp_files,
-        config_file, template_path_prefix)
+        config_file, template_path_prefix, vcd_name)
 
     return dut_outputs, ref_outputs
 
 def vivado_verilog_cosimulation(
     cycles, dut_factory, ref_factory, args, arg_types, 
     period=PERIOD, custom_sources=None, keep_temp_files=False, 
-    config_file='veriutils.cfg', template_path_prefix=''):
+    config_file='veriutils.cfg', template_path_prefix='', vcd_name=None):
     '''Run a cosimulation in which the device under test is simulated inside
     Vivado, using Verilog as the intermediate language.
 
@@ -1361,7 +1363,7 @@ def vivado_verilog_cosimulation(
     dut_outputs, ref_outputs = _vivado_generic_cosimulation(
         target_language, cycles, dut_factory, ref_factory, args, 
         arg_types, period, custom_sources, keep_temp_files,
-        config_file, template_path_prefix)
+        config_file, template_path_prefix, vcd_name)
 
     return dut_outputs, ref_outputs
 
