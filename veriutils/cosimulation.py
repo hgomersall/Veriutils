@@ -39,7 +39,8 @@ __all__ = ['SynchronousTest', 'myhdl_cosimulation',
 
 PERIOD = 10
 
-def _file_writer(filename, signal_list, clock, signal_names=None):
+@block
+def file_writer(filename, signal_list, clock, signal_names=None):
 
     ## Add clock to the signal list
     #signal_list.append(clock)
@@ -48,10 +49,6 @@ def _file_writer(filename, signal_list, clock, signal_names=None):
     ## signal_X is the name assigned in this function (where X is the index
     ## of the signal in the signal_list).
     #signal_names.append('unsigned $signal_%d' % len(signal_names))
-
-    @always(clock.posedge)
-    def _dummy_file_writer():
-        pass
 
     vhdl_signal_str_write_list = []
     vhdl_name_str_write_list = []
@@ -110,7 +107,7 @@ def _file_writer(filename, signal_list, clock, signal_names=None):
          (verilog_signal_indent, verilog_signal_indent))
         .join(verilog_signal_str_write_list))
 
-    _file_writer.verilog_code = '''
+    file_writer.verilog_code = '''
 initial begin: write_to_file
     integer output_file;
     
@@ -130,7 +127,7 @@ initial begin: write_to_file
 end
     ''' % (filename, verilog_name_str_write, verilog_signal_str_write,)
 
-    _file_writer.vhdl_code = '''
+    file_writer.vhdl_code = '''
 write_to_file: process ($clock) is
     use IEEE.std_logic_textio.all;
 
@@ -149,6 +146,14 @@ begin
     end if;
 end process write_to_file;
     ''' % (filename, vhdl_name_str_write, vhdl_signal_str_write,)
+
+    @always(clock.posedge)
+    def _dummy_file_writer():
+        # It's necessary to access all the signals in the right way inside
+        # the dummy writer in order that the used signals can be inferred
+        # correctly.
+        for n in range(len(signal_list)):
+            print(locals()['signal_' + str(n)])
 
     return _dummy_file_writer
 
@@ -233,7 +238,8 @@ def _types_from_signal_hierarchy(hierarchy, types):
 
     return _types
 
-def _single_signal_assigner(input_signal, output_signal):
+@block
+def single_signal_assigner(input_signal, output_signal):
     
     @always_comb
     def single_assignment():
@@ -241,7 +247,8 @@ def _single_signal_assigner(input_signal, output_signal):
         
     return single_assignment
 
-def _deinterfacer(interface, assignment_dict):
+@block
+def deinterfacer(interface, assignment_dict):
     
     assigner_blocks = []
     for attr_name in assignment_dict:
@@ -252,7 +259,7 @@ def _deinterfacer(interface, assignment_dict):
                       myhdl._Signal._Signal):
             
             assigner_blocks.append(
-                _single_signal_assigner(
+                single_signal_assigner(
                     locals()['input_' + attr_name],
                     locals()['output_' + attr_name]))
     
@@ -472,7 +479,7 @@ class SynchronousTest(object):
                              'one reset in the argument list.')
 
         self.clock = flattened_signals[flattened_types.index('clock')]
-        self.clockgen = clock_source(self.clock, self.period)
+        self.clockgen_factory = (clock_source, (self.clock, self.period), {})
 
         self._use_init_reset = False
 
@@ -480,24 +487,25 @@ class SynchronousTest(object):
             self.reset = flattened_signals[
                 flattened_types.index('init_reset')]
 
-            self.init_reset = init_reset_source(self.reset, self.clock)
+            self.init_reset_factory = (
+                init_reset_source, (self.reset, self.clock), {})
             self._use_init_reset = True
 
         elif 'custom_reset' in flattened_types:
             self.reset = flattened_signals[
                 flattened_types.index('custom_reset')]
-            self.init_reset = ()
+            self.init_reset_factory = ()
 
         else:
             # We need to create a reset to keep dependent HDL blocks happy
             # (though it won't be driven)
             self.reset = ResetSignal(False, active=True, async=False)
-            self.init_reset = ()
+            self.init_reset_factory = ()
 
         # Deal with random values
         # Create the random sources.
-        self.random_sources = [
-            random_source(each_signal, self.clock, self.reset) 
+        self.random_source_factories = [
+            (random_source, (each_signal, self.clock, self.reset), {})
             for each_signal, each_type in 
             zip(flattened_signals, flattened_types) if each_type == 'random']
 
@@ -565,7 +573,7 @@ class SynchronousTest(object):
         else:
             dut_outputs = None
 
-        self.output_recorders = []
+        self.output_recorder_factories = []
         for arg_name in args:
 
             if arg_types[arg_name] == 'non-signal':
@@ -579,47 +587,54 @@ class SynchronousTest(object):
             ref_signal = self.ref_args[signal]
 
             if dut_factory is not None:
-                dut_recorder, dut_arg_output = recorder_sink(
-                    dut_signal, self.clock)
+                dut_arg_output = []
+                dut_recorder = (
+                    recorder_sink, (dut_signal, self.clock, dut_arg_output), 
+                    {})
 
                 dut_outputs[signal] = dut_arg_output
-                self.output_recorders.append(dut_recorder)
+                self.output_recorder_factories.append(dut_recorder)
 
-            ref_recorder, ref_arg_output = recorder_sink(
-                ref_signal, self.clock)
+            ref_arg_output = []
+            ref_recorder = (
+                recorder_sink, (ref_signal, self.clock, ref_arg_output), {})
             ref_outputs[signal] = ref_arg_output
-            self.output_recorders.append(ref_recorder)
+            self.output_recorder_factories.append(ref_recorder)
             
 
-        ref_instance = ref_factory(**self.ref_args)
-        if ref_instance is None:
-            raise ValueError('The ref factory returned a None '
-                             'object, not an instance')
+        #ref_instance = ref_factory(**self.ref_args)
+        #if ref_instance is None:
+        #    raise ValueError('The ref factory returned a None '
+        #                     'object, not an instance')
 
-        self.test_instances = [ref_instance]
+        self.test_factories = [(ref_factory, (), self.ref_args)]
 
         if dut_factory is not None:
-            dut_instance = dut_factory(**self.dut_args)        
-            if dut_instance is None:
-                raise ValueError('The dut factory returned a None '
-                                 'object, not an instance')
+            #dut_instance = dut_factory(**self.dut_args)        
+            #if dut_instance is None:
+            #    raise ValueError('The dut factory returned a None '
+            #                     'object, not an instance')
             
-            self.test_instances += [dut_instance]
+            self.test_factories += [(dut_factory, (), self.dut_args)]
 
         self._dut_factory = dut_factory
 
         self.outputs = (dut_outputs, ref_outputs)
+
+        # Note: self.ref_args is args
         self.args = args
         self.arg_types = arg_types
 
         self._simulator_run = False
 
-    def cosimulate(self, cycles):
+    def cosimulate(self, cycles, vcd_name=None):
         '''Co-simulate the device under test and the reference design.
 
         Return a pair tuple of lists, each corresponding to the recorded
         signals (in the order they were passed) of respectively the 
         device under test and the reference design.
+
+        If vcd_name is not None, a vcd file will be created of the 
         '''
 
         # We initially need to clear all the signals to bring them to
@@ -640,18 +655,92 @@ class SynchronousTest(object):
             else:
                 flattened_args[each_signal_obj]._clear()
 
-        sim = Simulation(self.random_sources + self.output_recorders + 
+        def tb_wrapper():
+
+            (non_signal_list, flattened_ref_args, 
+             flattened_arg_types, _, _)= (
+                 _create_flattened_args(self.args, self.arg_types))
+
+            signal_dict = {}
+
+            def append_signal_obj_to_dict(signal_obj, name):
+
+                if isinstance(signal_obj, list):
+                    # Special case the list signal object
+                    for n, each_signal in enumerate(signal_obj):
+                        if not isinstance(each_signal, myhdl._Signal._Signal):
+                            continue
+
+                        signal_dict[name + str(n)] = each_signal
+                
+                else:
+                    signal_dict[name] = signal_obj
+                    
+            for each_signal_obj in flattened_args:
+
+                if flattened_arg_types[each_signal_obj] is 'output':
+                    pass
+                else:
+                    append_signal_obj_to_dict(
+                        flattened_args[each_signal_obj], each_signal_obj)
+
+            locals().update(signal_dict)
+
+            print(locals())
+
+            return tuple(self.random_sources + self.output_recorders + 
                          self.test_instances + self.custom_sources + 
                          [self.clockgen, self.init_reset])
 
-        sim.run(duration=cycles*self.period, quiet=1)
+        #tb_wrapper.__name__ = 'bleh'
+        #tb_wrapper()
 
-        sim._finalize()
+        #tb = traceSignals(tb_wrapper)
+
+        @block
+        def top():
+            random_sources = [
+                factory(*args, **kwargs) for factory, args, kwargs in 
+                self.random_source_factories]
+            output_recorders = [
+                factory(*args, **kwargs) for factory, args, kwargs in
+                self.output_recorder_factories]
+
+            test_instances = []
+            for name, (factory, args, kwargs) in zip(
+                ('ref', 'dut'), self.test_factories):
+                
+                try:
+                    test_instances.append(factory(*args, **kwargs))
+                except myhdl.BlockError as e:
+                    raise myhdl.BlockError(
+                        'The %s factory returned an invalid object: %s' % 
+                        (name, e))
+
+            custom_sources = [
+                factory(*args, **kwargs) for factory, args, kwargs in
+                self.custom_sources]
+
+            clockgen = self.clockgen_factory[0](
+                *self.clockgen_factory[1], **self.clockgen_factory[2])
+
+            try:
+                init_reset = self.init_reset_factory[0](
+                    *self.init_reset_factory[1], **self.init_reset_factory[2])
+            except IndexError:
+                init_reset = []
+
+            return [random_sources, output_recorders, test_instances, 
+                    custom_sources, [clockgen, init_reset]]
+
+        top_level_block = top()
+        top_level_block.run_sim(duration=cycles*self.period, quiet=1)
+        top_level_block.quit_sim()
 
         self._simulator_run = True
         return self.outputs
 
-
+    @block
     def dut_convertible_top(self, signal_output_file):
         '''Acts as a top-level MyHDL method, implementing a portable, 
         convertible version of the SynchronousTest object wrapping the 
@@ -664,7 +753,6 @@ class SynchronousTest(object):
         cosimulate is run for fewer cycles than :meth:`dut_convertible_top`, 
         the result is undefined.
         '''
-
         if not self._simulator_run:
             raise RuntimeError('The simulator should be run before '
                                'dut_convertible_top')
@@ -817,7 +905,7 @@ class SynchronousTest(object):
             each_interface = self.args[each_interface_name]
             each_mapping = interface_mapping[each_interface_name]
 
-            instances.append(_deinterfacer(each_interface, each_mapping))
+            instances.append(deinterfacer(each_interface, each_mapping))
 
         ### END
 
@@ -859,7 +947,7 @@ class SynchronousTest(object):
                         _turn_signal_hierarchy_into_name(signal_hierarchy)))
 
         # Setup the output writer and add it to the instances list
-        instances.append(_file_writer(
+        instances.append(file_writer(
             signal_output_file, recorded_list, clock, recorded_list_names))
 
 
@@ -981,11 +1069,11 @@ def _vivado_generic_cosimulation(
             vhdl_files += vhdl_dependencies + vhdl_dut_files
 
             # Generate the output VHDL files
-            toVHDL.name = None
-            toVHDL.directory = tmp_dir
-
             signal_output_filename = os.path.join(tmp_dir, 'signal_outputs')
-            toVHDL(sim_object.dut_convertible_top, signal_output_filename)
+            convertible_top = sim_object.dut_convertible_top(
+                signal_output_filename)
+
+            convertible_top.convert(hdl='VHDL', path=tmp_dir)
 
         elif target_language == 'Verilog':
             try:
@@ -999,11 +1087,11 @@ def _vivado_generic_cosimulation(
             verilog_files += verilog_dependencies + verilog_dut_files
 
             # Generate the output Verilog files
-            toVerilog.name = None
-            toVerilog.directory = tmp_dir
-
             signal_output_filename = os.path.join(tmp_dir, 'signal_outputs')
-            toVerilog(sim_object.dut_convertible_top, signal_output_filename)
+            convertible_top = sim_object.dut_convertible_top(
+                signal_output_filename)
+
+            convertible_top.convert(hdl='Verilog', path=tmp_dir)
 
         else:
             raise ValueError('Target language must be \'Verilog\' or '
@@ -1239,23 +1327,12 @@ def vivado_vhdl_cosimulation(
     behaviour can be turned off by settings ``keep_temp_files`` to ``True``.
     '''
 
-    # Before we mess with toVHDL, remember what it was originally.
-    toVHDL_name_state = toVHDL.name
-    toVHDL_dir_state = toVHDL.directory
-    
-    # We now need to make sure we clean up after ourselves.
-    try:
-        target_language = 'VHDL'
+    target_language = 'VHDL'
 
-        dut_outputs, ref_outputs = _vivado_generic_cosimulation(
-            target_language, cycles, dut_factory, ref_factory, args, 
-            arg_types, period, custom_sources, keep_temp_files,
-            config_file, template_path_prefix)
-
-    finally:
-        # Undo the changes to toVHDL
-        toVHDL.name = toVHDL_name_state
-        toVHDL.directory = toVHDL_dir_state
+    dut_outputs, ref_outputs = _vivado_generic_cosimulation(
+        target_language, cycles, dut_factory, ref_factory, args, 
+        arg_types, period, custom_sources, keep_temp_files,
+        config_file, template_path_prefix)
 
     return dut_outputs, ref_outputs
 
@@ -1279,23 +1356,12 @@ def vivado_verilog_cosimulation(
     behaviour can be turned off by settings ``keep_temp_files`` to ``True``.
     '''
 
-    # Before we mess with toVerilog, remember what it was originally.
-    toVerilog_name_state = toVerilog.name
-    toVerilog_dir_state = toVerilog.directory
-    
-    # We now need to make sure we clean up after ourselves.
-    try:
-        target_language = 'Verilog'
+    target_language = 'Verilog'
 
-        dut_outputs, ref_outputs = _vivado_generic_cosimulation(
-            target_language, cycles, dut_factory, ref_factory, args, 
-            arg_types, period, custom_sources, keep_temp_files,
-            config_file, template_path_prefix)
-
-    finally:
-        # Undo the changes to toVHDL
-        toVerilog.name = toVerilog_name_state
-        toVerilog.directory = toVerilog_dir_state
+    dut_outputs, ref_outputs = _vivado_generic_cosimulation(
+        target_language, cycles, dut_factory, ref_factory, args, 
+        arg_types, period, custom_sources, keep_temp_files,
+        config_file, template_path_prefix)
 
     return dut_outputs, ref_outputs
 

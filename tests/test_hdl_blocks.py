@@ -139,20 +139,26 @@ class TestClockSource(TestCase):
         clock = Signal(bool(start_val))
         time = [0]
 
-        @always(delay(1))
-        def check_every_interval():
-            if time[0] % period < even_length:
-                self.assertEqual(clock.val, start_val)
-            else:
-                self.assertEqual(clock.val, not(start_val))
-
-            time[0] += 1
-
         dut = clock_source(clock, period)
-        sim = Simulation(dut, check_every_interval)
 
-        # Run for 10 periods
-        sim.run(duration=10*period, quiet=1)
+        @block
+        def top():
+            dut = clock_source(clock, period)
+
+            @always(delay(1))
+            def check_every_interval():
+                if time[0] % period < even_length:
+                    self.assertEqual(clock.val, start_val)
+                else:
+                    self.assertEqual(clock.val, not(start_val))
+                    
+                time[0] += 1
+
+            return dut, check_every_interval
+
+        top_level_block = top()
+        top_level_block.run_sim(duration=10*period, quiet=1)
+        top_level_block.quit_sim()        
 
     def test_not_signal(self):
         '''Passing something that is not a signal should raise a ValueError
@@ -189,38 +195,61 @@ class TestClockSource(TestCase):
         '''The even period clock should convert without error to VHDL
         '''
         clock = Signal(bool(0))
-
-        toVHDL_directory_state = toVHDL.directory
-
+        
+        period = 10
+        test_block = clock_source(clock, period)
         tmp_dir = tempfile.mkdtemp()
 
-        toVHDL.directory = tmp_dir
-
         try:
-            period = 10
-            toVHDL(clock_source, clock, period)
+            test_block.convert(hdl='VHDL', path=tmp_dir)
 
         finally:
-            toVHDL.directory = toVHDL_directory_state
             shutil.rmtree(tmp_dir)
 
     def test_odd_period_convertible_to_VHDL(self):
         '''The odd period clock should convert without error to VHDL
         '''
         clock = Signal(bool(0))
-
-        toVHDL_directory_state = toVHDL.directory
-
+        
+        period = 9
+        test_block = clock_source(clock, period)
         tmp_dir = tempfile.mkdtemp()
 
-        toVHDL.directory = tmp_dir
-
         try:
-            period = 9
-            toVHDL(clock_source, clock, period)
+            test_block.convert(hdl='VHDL', path=tmp_dir)
 
         finally:
-            toVHDL.directory = toVHDL_directory_state
+            shutil.rmtree(tmp_dir)
+
+    def test_even_period_convertible_to_Verilog(self):
+        '''The even period clock should convert without error to Verilog
+        '''
+        clock = Signal(bool(0))
+        
+        period = 10
+        test_block = clock_source(clock, period)
+        tmp_dir = tempfile.mkdtemp()
+
+        try:
+            test_block.convert(hdl='Verilog', path=tmp_dir)
+
+        finally:
+            shutil.rmtree(tmp_dir)
+
+    def test_odd_period_convertible_to_Verilog(self):
+        '''The odd period clock should convert without error to Verilog
+        '''
+        clock = Signal(bool(0))
+        
+        period = 9
+        test_block = clock_source(clock, period)
+        tmp_dir = tempfile.mkdtemp()
+
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            test_block.convert(hdl='Verilog', path=tmp_dir)
+
+        finally:
             shutil.rmtree(tmp_dir)
 
 class TestInitResetSource(HDLTestCase):
@@ -264,47 +293,52 @@ class TestInitResetSource(HDLTestCase):
 
         for clock_start in (0, 1):
             clock = Signal(bool(clock_start))
-            clockgen = clock_source(clock, self.clock_period)
 
             dummy_reset = ResetSignal(intbv(0), active=1, async=False)
             n_runs = 99
             clock_idx = [0]
 
-            @always(delay(self.clock_period//2))
-            def output_check():
+            @block
+            def top():
+                @always(delay(self.clock_period//2))
+                def output_check():
 
-                if clock == True:
-                    clock_idx[0] += 1
+                    if clock == True:
+                        clock_idx[0] += 1
 
-                    # positive edge
-                    # The clock_start offset is because we need to ignore
-                    # the starting value.
-                    if clock_idx[0] < 3 + clock_start:
-                        self.assertEqual(self.reset_signal.active,
-                                         self.reset_signal)
-                    else:
-                        self.assertEqual(not self.reset_signal.active, 
-                                         self.reset_signal)  
+                        # positive edge
+                        # The clock_start offset is because we need to ignore
+                        # the starting value.
+                        if clock_idx[0] < 3 + clock_start:
+                            self.assertEqual(self.reset_signal.active,
+                                             self.reset_signal)
+                        else:
+                            self.assertEqual(not self.reset_signal.active, 
+                                             self.reset_signal)
 
-                    if clock_idx[0] >= n_runs:
-                        raise StopSimulation
+                        if clock_idx[0] >= n_runs:
+                            raise StopSimulation
 
-
-                else:
-                    # negative edge
-                    # Nothing changes
-                    if clock_idx[0] < 3 + clock_start:
-                        self.assertEqual(self.reset_signal.active, 
-                                         self.reset_signal)
 
                     else:
-                        self.assertEqual(not self.reset_signal.active, 
-                                         self.reset_signal)
+                        # negative edge
+                        # Nothing changes
+                        if clock_idx[0] < 3 + clock_start:
+                            self.assertEqual(self.reset_signal.active, 
+                                             self.reset_signal)
 
-            dut = init_reset_source(self.reset_signal, clock)
+                        else:
+                            self.assertEqual(not self.reset_signal.active, 
+                                             self.reset_signal)
+                
+                clockgen = clock_source(clock, self.clock_period)
+                dut = init_reset_source(self.reset_signal, clock)
 
-            sim = Simulation(clockgen, dut, output_check)
-            sim.run(quiet=1)
+                return output_check, dut, clockgen
+
+            top_level_block = top()
+            top_level_block.run_sim(quiet=1)
+            top_level_block.quit_sim()
 
     def test_negedge_reset_sequence(self):
         '''It should be possible to set a negative clock edge sensitivity.
@@ -313,48 +347,53 @@ class TestInitResetSource(HDLTestCase):
         '''
         for clock_start in (0, 1):
             clock = Signal(bool(clock_start))
-            clockgen = clock_source(clock, self.clock_period)
 
             dummy_reset = ResetSignal(intbv(0), active=1, async=False)
             n_runs = 99
             clock_idx = [0]
 
-            @always(delay(self.clock_period//2))
-            def output_check():
+            @block
+            def top():
+                @always(delay(self.clock_period//2))
+                def output_check():
 
-                if clock == False:
-                    clock_idx[0] += 1
+                    if clock == False:
+                        clock_idx[0] += 1
 
-                    # negative edge
-                    # The clock_start offset is because we need to ignore
-                    # the starting value.
-                    if clock_idx[0] < 3 + 1 - clock_start:
-                        self.assertEqual(self.reset_signal.active,
-                                         self.reset_signal)
-                    else:
-                        self.assertEqual(not self.reset_signal.active, 
-                                         self.reset_signal)  
+                        # negative edge
+                        # The clock_start offset is because we need to ignore
+                        # the starting value.
+                        if clock_idx[0] < 3 + 1 - clock_start:
+                            self.assertEqual(self.reset_signal.active,
+                                             self.reset_signal)
+                        else:
+                            self.assertEqual(not self.reset_signal.active, 
+                                             self.reset_signal)  
 
-                    if clock_idx[0] >= n_runs:
-                        raise StopSimulation
+                        if clock_idx[0] >= n_runs:
+                            raise StopSimulation
 
-
-                else:
-                    # positive edge
-                    # Nothing changes
-                    if clock_idx[0] < 3 + 1 - clock_start:
-                        self.assertEqual(self.reset_signal.active, 
-                                         self.reset_signal)
 
                     else:
-                        self.assertEqual(not self.reset_signal.active, 
-                                         self.reset_signal)
+                        # positive edge
+                        # Nothing changes
+                        if clock_idx[0] < 3 + 1 - clock_start:
+                            self.assertEqual(self.reset_signal.active, 
+                                             self.reset_signal)
 
-            dut = init_reset_source(self.reset_signal, clock, 
-                                    edge_sensitivity='negedge')
+                        else:
+                            self.assertEqual(not self.reset_signal.active, 
+                                             self.reset_signal)
 
-            sim = Simulation(clockgen, dut, output_check)
-            sim.run(quiet=1)
+                dut = init_reset_source(self.reset_signal, clock, 
+                                        edge_sensitivity='negedge')
+                clockgen = clock_source(clock, self.clock_period)
+
+                return output_check, dut, clockgen
+
+            top_level_block = top()
+            top_level_block.run_sim(quiet=1)
+            top_level_block.quit_sim()
 
 
     def test_invalid_sensitivity(self):
@@ -369,19 +408,36 @@ class TestInitResetSource(HDLTestCase):
     def test_init_reset_source_convertible_to_VHDL(self):
         '''The init reset source should be convertible to VHDL
         '''
-        toVHDL_directory_state = toVHDL.directory
+        
+        clock = Signal(bool(0))
+        test_signal = Signal(intbv(0, min=-1000, max=1024))
+        
+        test_block = init_reset_source(self.reset_signal, clock)
         tmp_dir = tempfile.mkdtemp()
-        toVHDL.directory = tmp_dir
 
         try:
-            clock = Signal(bool(0))            
-            test_signal = Signal(intbv(0, min=-1000, max=1024))
-
-            toVHDL(init_reset_source, self.reset_signal, clock)
+            test_block.convert(hdl='VHDL', path=tmp_dir)
 
         finally:
-            toVHDL.directory = toVHDL_directory_state
             shutil.rmtree(tmp_dir)
+
+    def test_init_reset_source_convertible_to_Verilog(self):
+        '''The init reset source should be convertible to Verilog
+        '''
+        
+        clock = Signal(bool(0))
+        test_signal = Signal(intbv(0, min=-1000, max=1024))
+        
+        test_block = init_reset_source(self.reset_signal, clock)
+        tmp_dir = tempfile.mkdtemp()
+
+        try:
+            test_block.convert(hdl='Verilog', path=tmp_dir)
+
+        finally:
+            shutil.rmtree(tmp_dir)
+
+
 
 class TestRandomSource(TestCase):
     '''There should be a random source factory for generating instances that 
@@ -571,53 +627,77 @@ class TestRandomSource(TestCase):
         enum_vals = enum(*enum_names)
 
         class Interface(object):
+
+            signals = None
+
             def __init__(self):
                 self.a = Signal(intbv(0, min=-100, max=59))
                 self.b = Signal(bool(0))
                 self.c = Signal(enum_vals.a)
 
                 self.signals = (self.a, self.b, self.c)
-        
+
         test_signals = (
             (Signal(intbv(0, min=-1000, max=1024)), 'signal'),
             (Signal(bool(0)), 'signal'),
             (Signal(enum_vals.b), 'signal'),
-            (Interface(), 'interface'))
+            (Interface(), 'interface'),)
 
-        for test_signal, test_signal_type in test_signals:
+        @block
+        def top(test_signal, test_signal_type):
 
-            clock = Signal(bool(0))        
-            clockgen = clock_source(clock, self.clock_period)
+            if test_signal_type == 'signal':
 
-            @always(clock.posedge)
-            def output_check():
+                @always(clock.posedge)
+                def output_check():
 
-                if last_reset[0] == reset_signal.active:
-                    if test_signal_type == 'signal':
+                    if last_reset[0] == reset_signal.active:
                         self.assertEqual(test_signal, test_signal._init)
 
                     else:
-                        # an interface
-                        for each_signal in test_signal.signals:
-                            self.assertEqual(each_signal, each_signal._init)
+                        pass
+                    
+                    last_reset[0] = copy.copy(reset_signal.val)
 
-                else:
-                    pass
-            
-                last_reset[0] = copy.copy(reset_signal.val)
+            else:
+                @always(clock.posedge)
+                def output_check():
+
+                    if last_reset[0] == reset_signal.active:
+                        for each_signal in test_signal.signals:
+                            self.assertEqual(
+                                each_signal, each_signal._init)
+
+                    else:
+                        pass
+                    
+                    last_reset[0] = copy.copy(reset_signal.val)
 
 
             random.seed()
-            dummy_reset_signal = ResetSignal(intbv(0), active=1, async=False)
+            dummy_reset_signal = ResetSignal(
+                intbv(0), active=1, async=False)
+
             reset_signal = ResetSignal(intbv(0), active=1, async=False)
+            
             last_reset = [copy.copy(reset_signal.val)]
 
             random_reset = random_source(reset_signal, clock, 
                                          dummy_reset_signal)
+            clockgen = clock_source(clock, self.clock_period)
+
             dut = random_source(test_signal, clock, reset_signal)
 
-            sim = Simulation(clockgen, random_reset, dut, output_check)
-            sim.run(duration=self.clock_period * 1000, quiet=1)
+            return clockgen, random_reset, dut, output_check
+
+        for each_test_signal, each_test_signal_type in test_signals:
+
+            clock = Signal(bool(0))        
+
+            top_level_block = top(each_test_signal, each_test_signal_type)
+            top_level_block.run_sim(
+                duration=self.clock_period * 1000, quiet=1)
+            top_level_block.quit_sim()
 
 
     def test_no_seed(self):
@@ -969,16 +1049,24 @@ class TestRecorderSink(TestCase):
 
         test_signal = Signal(intbv(0, min=min_val, max=max_val))
         test_output = []
-        @always_seq(self.clock.posedge, reset=self.reset)
-        def test_recorder():
-            test_output.append(int(test_signal.val))
+        recorded_output = []
 
-        source = random_source(test_signal, self.clock, self.reset)
-        sink, recorded_output = recorder_sink(test_signal, self.clock)
-        clockgen = clock_source(self.clock, self.clock_period)
+        @block
+        def top():
+            @always_seq(self.clock.posedge, reset=self.reset)
+            def test_recorder():
+                test_output.append(int(test_signal.val))
 
-        sim = Simulation(clockgen, source, sink, test_recorder)
-        sim.run(duration=self.clock_period * 30, quiet=1)
+            source = random_source(test_signal, self.clock, self.reset)
+            sink = recorder_sink(
+                test_signal, self.clock, recorded_output)
+            clockgen = clock_source(self.clock, self.clock_period)
+
+            return clockgen, source, sink, test_recorder
+
+        top_level_block = top()
+        top_level_block.run_sim(duration=30*self.clock_period, quiet=1)
+        top_level_block.quit_sim()
 
         self.assertEqual(test_output, recorded_output)
 
@@ -1002,21 +1090,27 @@ class TestRecorderSink(TestCase):
                 self.another_attribute = 10
 
         test_signal = TestInterface()
+        recorded_output = []
         test_output = []
 
-        @always_seq(self.clock.posedge, reset=self.reset)
-        def test_recorder():
-            test_output.append(
-                {'a': int(test_signal.a.val),
-                 'b': bool(test_signal.b.val),
-                 'c': test_signal.c.val})
+        @block
+        def top():
+            @always_seq(self.clock.posedge, reset=self.reset)
+            def test_recorder():
+                test_output.append(
+                    {'a': int(test_signal.a.val),
+                     'b': bool(test_signal.b.val),
+                     'c': test_signal.c.val})
 
-        source = random_source(test_signal, self.clock, self.reset)
-        sink, recorded_output = recorder_sink(test_signal, self.clock)
-        clockgen = clock_source(self.clock, self.clock_period)
+            source = random_source(test_signal, self.clock, self.reset)
+            sink = recorder_sink(test_signal, self.clock, recorded_output)
+            clockgen = clock_source(self.clock, self.clock_period)
 
-        sim = Simulation(clockgen, source, sink, test_recorder)
-        sim.run(duration=self.clock_period * 30, quiet=1)
+            return clockgen, source, sink, test_recorder
+
+        top_level_block = top()
+        top_level_block.run_sim(duration=30*self.clock_period, quiet=1)
+        top_level_block.quit_sim()
 
         self.assertEqual(test_output, recorded_output)
 
@@ -1033,22 +1127,29 @@ class TestRecorderSink(TestCase):
                          isinstance(each, myhdl._Signal._Signal)]
 
         test_output = []
+        recorded_output = []
 
-        @always_seq(self.clock.posedge, reset=self.reset)
-        def test_recorder():
-            each_output = [None] * len(valid_signals)
+        @block
+        def top():
 
-            for n in range(len(valid_signals)):
-                each_output[n] = copy.copy(valid_signals[n].val)
-            
-            test_output.append(each_output)
+            @always_seq(self.clock.posedge, reset=self.reset)
+            def test_recorder():
+                each_output = [None] * len(valid_signals)
 
-        source = random_source(test_signal_list, self.clock, self.reset)
-        sink, recorded_output = recorder_sink(test_signal_list, self.clock)
-        clockgen = clock_source(self.clock, self.clock_period)
+                for n in range(len(valid_signals)):
+                    each_output[n] = copy.copy(valid_signals[n].val)
+                
+                test_output.append(each_output)
 
-        sim = Simulation(clockgen, source, sink, test_recorder)
-        sim.run(duration=self.clock_period * 30, quiet=1)
+            source = random_source(test_signal_list, self.clock, self.reset)
+            sink = recorder_sink(test_signal_list, self.clock, recorded_output)
+            clockgen = clock_source(self.clock, self.clock_period)
+
+            return source, sink, clockgen, test_recorder
+
+        top_level_block = top()
+        top_level_block.run_sim(duration=30*self.clock_period, quiet=1)
+        top_level_block.quit_sim()
 
         self.assertEqual(test_output, recorded_output)
 
@@ -1061,16 +1162,23 @@ class TestRecorderSink(TestCase):
 
         test_signal = Signal(bool(0))
         test_output = []
-        @always_seq(self.clock.posedge, reset=self.reset)
-        def test_recorder():
-            test_output.append(bool(test_signal.val))
+        recorded_output = []
 
-        source = random_source(test_signal, self.clock, self.reset)
-        sink, recorded_output = recorder_sink(test_signal, self.clock)
-        clockgen = clock_source(self.clock, self.clock_period)
+        @block
+        def top():
+            @always_seq(self.clock.posedge, reset=self.reset)
+            def test_recorder():
+                test_output.append(bool(test_signal.val))
 
-        sim = Simulation(clockgen, source, sink, test_recorder)
-        sim.run(duration=self.clock_period * 30, quiet=1)
+            source = random_source(test_signal, self.clock, self.reset)
+            sink = recorder_sink(test_signal, self.clock, recorded_output)
+            clockgen = clock_source(self.clock, self.clock_period)
+
+            return source, sink, clockgen, test_recorder
+
+        top_level_block = top()
+        top_level_block.run_sim(duration=30*self.clock_period, quiet=1)
+        top_level_block.quit_sim()
 
         self.assertEqual(test_output, recorded_output)
 
@@ -1082,16 +1190,23 @@ class TestRecorderSink(TestCase):
         
         test_signal = Signal(enum_vals.a)
         test_output = []
-        @always_seq(self.clock.posedge, reset=self.reset)
-        def test_recorder():
-            test_output.append(test_signal.val)
+        recorded_output = []
 
-        source = random_source(test_signal, self.clock, self.reset)
-        sink, recorded_output = recorder_sink(test_signal, self.clock)
-        clockgen = clock_source(self.clock, self.clock_period)
+        @block
+        def top():
+            @always_seq(self.clock.posedge, reset=self.reset)
+            def test_recorder():
+                test_output.append(test_signal.val)
 
-        sim = Simulation(clockgen, source, sink, test_recorder)
-        sim.run(duration=self.clock_period * 30, quiet=1)
+            source = random_source(test_signal, self.clock, self.reset)
+            sink = recorder_sink(test_signal, self.clock, recorded_output)
+            clockgen = clock_source(self.clock, self.clock_period)
+
+            return source, sink, clockgen, test_recorder
+
+        top_level_block = top()
+        top_level_block.run_sim(duration=30*self.clock_period, quiet=1)
+        top_level_block.quit_sim()
 
         self.assertEqual(test_output, recorded_output)
 
@@ -1107,19 +1222,28 @@ class TestRecorderSink(TestCase):
         max_val = 999
 
         test_signal = Signal(intbv(0, min=min_val, max=max_val))
+        neg_edge_output = []
+        pos_edge_output = []
+        
+        @block
+        def top():
+            # We require a negative edge source
+            source = random_source(test_signal, self.clock, self.reset,
+                                   edge_sensitivity='negedge')
 
-        # We require a negative edge source
-        source = random_source(test_signal, self.clock, self.reset,
-                               edge_sensitivity='negedge')
+            neg_edge_sink = recorder_sink(
+                test_signal, self.clock, neg_edge_output, 
+                edge_sensitivity='negedge')
+            pos_edge_sink = recorder_sink(
+                test_signal, self.clock, pos_edge_output, 
+                edge_sensitivity='posedge')
+            clockgen = clock_source(self.clock, self.clock_period)
+            
+            return clockgen, source, pos_edge_sink, neg_edge_sink
 
-        neg_edge_sink, neg_edge_output = recorder_sink(
-            test_signal, self.clock, edge_sensitivity='negedge')
-        pos_edge_sink, pos_edge_output = recorder_sink(
-            test_signal, self.clock, edge_sensitivity='posedge')
-        clockgen = clock_source(self.clock, self.clock_period)
-
-        sim = Simulation(clockgen, source, pos_edge_sink, neg_edge_sink)
-        sim.run(duration=self.clock_period * 30, quiet=1)
+        top_level_block = top()
+        top_level_block.run_sim(duration=30*self.clock_period, quiet=1)
+        top_level_block.quit_sim()
 
         assert len(neg_edge_output) == len(pos_edge_output)
         # Now we need to offset the results of the positive edge
@@ -1138,7 +1262,7 @@ class TestRecorderSink(TestCase):
         source = random_source(test_signal, self.clock, self.reset)
 
         self.assertRaisesRegex(ValueError, 'Invalid edge sensitivity',
-                               recorder_sink, test_signal, self.clock, 
+                               recorder_sink, test_signal, self.clock, [],
                                edge_sensitivity='INVALID')
 
 class TestLutSignalDriver(TestCase):
@@ -1381,9 +1505,7 @@ class TestLutSignalDriver(TestCase):
     def test_lut_signal_driver_convertible_to_VHDL(self):
         '''The lut signal driver should be convertible to VHDL
         '''
-        toVHDL_directory_state = toVHDL.directory
         tmp_dir = tempfile.mkdtemp()
-        toVHDL.directory = tmp_dir
 
         try:
             test_signal = Signal(intbv(0, min=-1000, max=1024))
@@ -1397,8 +1519,31 @@ class TestLutSignalDriver(TestCase):
             # Make sure our lut length is not a power of 2
             assert (log(len(lut), 2) % 2 != 0)
 
-            toVHDL(lut_signal_driver, test_signal, lut, clock)
+            test_block = lut_signal_driver(test_signal, lut, clock)
+            test_block.convert(hdl='VHDL')
 
         finally:
-            toVHDL.directory = toVHDL_directory_state
+            shutil.rmtree(tmp_dir)
+
+    def test_lut_signal_driver_convertible_to_Verilog(self):
+        '''The lut signal driver should be convertible to Verilog
+        '''
+        tmp_dir = tempfile.mkdtemp()
+
+        try:
+            test_signal = Signal(intbv(0, min=-1000, max=1024))
+
+            min_val = test_signal.val.min
+            max_val = test_signal.val.max
+            clock = self.clock
+                
+            lut = [randrange(min_val, max_val) for each in range(100)]
+                
+            # Make sure our lut length is not a power of 2
+            assert (log(len(lut), 2) % 2 != 0)
+
+            test_block = lut_signal_driver(test_signal, lut, clock)
+            test_block.convert(hdl='Verilog')
+
+        finally:
             shutil.rmtree(tmp_dir)

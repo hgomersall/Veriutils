@@ -4,7 +4,7 @@ from .test_dsp48e1 import DSP48E1TestCase
 
 import unittest
 
-from myhdl import always_seq
+from myhdl import always_seq, block
 from veriutils import (
     myhdl_cosimulation, vivado_vhdl_cosimulation, VIVADO_EXECUTABLE)
 
@@ -23,6 +23,7 @@ class TestSimpleWrapperSimulation(DSP48E1TestCase):
 
         self.opmode.val[:] = self.operations['multiply']
 
+        @block
         def ref(**kwargs):
 
             P = kwargs['P']

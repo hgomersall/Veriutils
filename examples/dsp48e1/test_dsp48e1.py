@@ -2,7 +2,7 @@
 import unittest
 from tests.base_hdl_test import HDLTestCase, get_signed_intbv_rand_signal
 from .utils import weighted_random_reset_source
-from myhdl import (intbv, enum, Signal, ResetSignal, instance,
+from myhdl import (intbv, enum, Signal, ResetSignal, instance, block,
                    delay, always, always_seq, Simulation, StopSimulation)
 
 from random import randrange
@@ -159,10 +159,15 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
 
         reset = self.default_args['reset']
         clock = self.default_args['clock']
-        @always_seq(clock.posedge, reset=reset)
+        @block
         def set_opmode():
-            self.opmode.next = self.operations['multiply']
+            @always_seq(clock.posedge, reset=reset)
+            def _set_opmode():
+                self.opmode.next = self.operations['multiply']
+
+            return _set_opmode
         
+        @block
         def ref(**kwargs):
 
             P = kwargs['P']
@@ -183,7 +188,7 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         cycles = 20
         dut_outputs, ref_outputs = self.cosimulate(
             cycles, DSP48E1, ref, args, arg_types, 
-            custom_sources=[set_opmode])
+            custom_sources=[(set_opmode, (), {})])
 
         # There are pipeline_registers cycles latency on the output. 
         # The reference above has only 1 cycle latency, so we need to offset 
@@ -196,10 +201,15 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         '''
         reset = self.default_args['reset']
         clock = self.default_args['clock']
-        @always_seq(clock.posedge, reset=reset)
+        @block
         def set_opmode():
-            self.opmode.next = self.operations['multiply_add']
+            @always_seq(clock.posedge, reset=reset)
+            def _set_opmode():
+                self.opmode.next = self.operations['multiply_add']
 
+            return _set_opmode
+
+        @block
         def ref(**kwargs):
 
             P = kwargs['P']
@@ -221,7 +231,7 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         cycles = 20
         dut_outputs, ref_outputs = self.cosimulate(
             cycles, DSP48E1, ref, args, arg_types,
-            custom_sources=[set_opmode])
+            custom_sources=[(set_opmode, (), {})])
 
         # There are pipeline_registers cycles latency on the output. 
         # The reference above has only 1 cycle latency, so we need to offset 
@@ -240,10 +250,16 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         '''
         reset = self.default_args['reset']
         clock = self.default_args['clock']
-        @always_seq(clock.posedge, reset=reset)
-        def set_opmode():
-            self.opmode.next = self.operations['multiply_accumulate']
 
+        @block
+        def set_opmode():
+            @always_seq(clock.posedge, reset=reset)
+            def _set_opmode():
+                self.opmode.next = self.operations['multiply_accumulate']
+
+            return _set_opmode
+
+        @block
         def ref(**kwargs):
 
             P = kwargs['P']
@@ -265,7 +281,7 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         cycles = 20
         dut_outputs, ref_outputs = self.cosimulate(
             cycles, DSP48E1, ref, args, arg_types,
-            custom_sources=[set_opmode])
+            custom_sources=[(set_opmode, (), {})])
 
         # There are pipeline_registers cycles latency on the output. 
         # The reference above has only 1 cycle latency, so we need to offset 
@@ -282,10 +298,16 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         '''
         reset = self.default_args['reset']
         clock = self.default_args['clock']
-        @always_seq(clock.posedge, reset=reset)
-        def set_opmode():
-            self.opmode.next = self.operations['multiply_deccumulate']
 
+        @block
+        def set_opmode():
+            @always_seq(clock.posedge, reset=reset)
+            def _set_opmode():
+                self.opmode.next = self.operations['multiply_deccumulate']
+
+            return _set_opmode
+
+        @block
         def ref(**kwargs):
 
             P = kwargs['P']
@@ -308,7 +330,7 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         cycles = 20
         dut_outputs, ref_outputs = self.cosimulate(
             cycles, DSP48E1, ref, args, arg_types,
-            custom_sources=[set_opmode])
+            custom_sources=[(set_opmode, (), {})])
 
         # There are pipeline_registers cycles latency on the output. 
         # The reference above has only 1 cycle latency, so we need to offset 
@@ -324,10 +346,18 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         '''
         reset = self.default_args['reset']
         clock = self.default_args['clock']
-        @always_seq(clock.posedge, reset=reset)
-        def set_opmode():
-            self.opmode.next = self.operations['multiply']
 
+        operation = self.operations['multiply']
+
+        @block
+        def set_opmode():
+            @always_seq(clock.posedge, reset=reset)
+            def _set_opmode():
+                self.opmode.next = operation
+
+            return _set_opmode
+
+        @block
         def ref(**kwargs):
 
             P = kwargs['P']
@@ -388,7 +418,7 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         cycles = 40
         dut_outputs, ref_outputs = self.cosimulate(
             cycles, DSP48E1, ref, args, arg_types,
-            custom_sources=[set_opmode])
+            custom_sources=[(set_opmode, (), {})])
 
         self.assertEqual(dut_outputs['P'], ref_outputs['P'])
 
@@ -399,10 +429,18 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         '''
         reset = self.default_args['reset']
         clock = self.default_args['clock']
-        @always_seq(clock.posedge, reset=reset)
-        def set_opmode():
-            self.opmode.next = self.operations['multiply']
 
+        operation = self.operations['multiply']
+
+        @block
+        def set_opmode():
+            @always_seq(clock.posedge, reset=reset)
+            def _set_opmode():
+                self.opmode.next = operation
+
+            return _set_opmode
+
+        @block
         def ref(**kwargs):
 
             P = kwargs['P']
@@ -459,13 +497,14 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
                           'clock_enable': 'random'})
 
         custom_sources = [
-            weighted_random_reset_source(args['reset'], args['clock'], 0.7)]
+            (weighted_random_reset_source, 
+             (args['reset'], args['clock'], 0.7), {})]
 
         # Don't run too many cycles or you'll get an overflow!
         cycles = 40
         dut_outputs, ref_outputs = self.cosimulate(
             cycles, DSP48E1, ref, args, arg_types, 
-            custom_sources=custom_sources+[set_opmode])
+            custom_sources=custom_sources+[(set_opmode, (), {})])
 
         self.assertEqual(dut_outputs['reset'], ref_outputs['reset'])
         self.assertEqual(dut_outputs['P'], ref_outputs['P'])
@@ -482,6 +521,7 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
         opmode_reverse_lookup = {
             self.operations[key]: key for key in self.operations}
 
+        @block
         def custom_reset_source(driven_reset, clock):
             dummy_reset = ResetSignal(bool(0), active=1, async=False)
 
@@ -503,6 +543,7 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
 
             return custom_reset
 
+        @block
         def ref(**kwargs):
 
             P = kwargs['P']
@@ -577,7 +618,8 @@ class TestDSP48E1Simulation(DSP48E1TestCase):
                           'clock_enable': 'random',
                           'reset': 'custom_reset'})
 
-        custom_sources = [custom_reset_source(args['reset'], args['clock'])]
+        custom_sources = [
+            (custom_reset_source, (args['reset'], args['clock']), {})]
 
         cycles = 100
         dut_outputs, ref_outputs = self.cosimulate(

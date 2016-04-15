@@ -2,7 +2,8 @@
 '''A module implementing the Xilinx DSP48E1 DSP slice.
 '''
 
-from myhdl import always_seq, always_comb, Signal, intbv, enum, ConcatSignal
+from myhdl import (
+    always_seq, always_comb, Signal, intbv, enum, ConcatSignal, block)
 from veriutils import (
     check_intbv_signal, check_bool_signal, check_reset_signal)
 from math import log, floor
@@ -19,6 +20,7 @@ X_ZEROS, X_M = 0, 1
 Y_ZEROS, Y_M = 0, 1
 Z_ZEROS, Z_P, Z_C = 0, 2, 3
 
+@block
 def DSP48E1(A, B, C, P, opmode, clock_enable, reset, clock):
 
     # Check the inputs

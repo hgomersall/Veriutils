@@ -2,6 +2,7 @@
 from myhdl import *
 from random import random
 
+@block
 def weighted_random_reset_source(driven_reset, clock, 
                                  active_probability=0.5):
     '''A random reset source that has a couple of cycles of initialisation 

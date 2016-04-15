@@ -41,6 +41,7 @@ def copy_signal(signal_obj):
         return new_signal_obj
 
 
+@block
 def clock_source(clock, period):
 
     if not isinstance(clock, myhdl._Signal._Signal):
@@ -92,6 +93,7 @@ end process CLOCK_SOURCE_CLOCKGEN;
 
     return _clockgen
 
+@block
 def init_reset_source(reset, clock, edge_sensitivity='posedge'):
 
     check_reset_signal(reset, 'reset', async=reset.async, 
@@ -138,6 +140,7 @@ def init_reset_source(reset, clock, edge_sensitivity='posedge'):
 
     return init_reset
 
+@block
 def _signal_random_source(output_signal, clock, reset, 
                           edge_sensitivity='posedge'):
     
@@ -184,6 +187,7 @@ def _signal_random_source(output_signal, clock, reset,
 
     return source
 
+@block
 def random_source(output_signal, clock, reset, seed=None, 
                   edge_sensitivity='posedge'):
     '''Generate random signals on each clock edge - the specific
@@ -243,7 +247,9 @@ def random_source(output_signal, clock, reset, seed=None,
 
         return sources
 
-def recorder_sink(signal, clock, edge_sensitivity='posedge'):
+@block
+def recorder_sink(signal, clock, recorded_output_list,
+                  edge_sensitivity='posedge'):
     '''Record the value on signal on each clock edge. The edge 
     sensitivity is given by `edge_sensitivity` and can be either `posedge` 
     for positive edge or `negedge` for negative edge.
@@ -272,14 +278,11 @@ def recorder_sink(signal, clock, edge_sensitivity='posedge'):
 
     reset_signal = ResetSignal(bool(0), active=1, async=False)
 
-    recorded_output = []
-
-
     if isinstance(signal, myhdl._Signal._Signal):
         @always_seq(edge, reset_signal)
         def recorder():
             _recorded_output = copy.copy(signal.val)
-            recorded_output.append(_recorded_output)
+            recorded_output_list.append(_recorded_output)
 
     else:
 
@@ -290,7 +293,7 @@ def recorder_sink(signal, clock, edge_sensitivity='posedge'):
                 _recorded_output = [
                     copy.copy(each_sig.val) for each_sig in signal if 
                     isinstance(each_sig, myhdl._Signal._Signal)]
-                recorded_output.append(_recorded_output)
+                recorded_output_list.append(_recorded_output)
 
         else:
 
@@ -302,11 +305,12 @@ def recorder_sink(signal, clock, edge_sensitivity='posedge'):
                 
                 _recorded_output = {key: copy.copy(interface_signals[key].val) 
                                     for key in interface_signals}
-                recorded_output.append(_recorded_output)
+                recorded_output_list.append(_recorded_output)
 
-    return recorder, recorded_output
+    return recorder
 
 
+@block
 def lut_signal_driver(signal, drive_lut, clock, edge_sensitivity='posedge'):
     '''Drive the output from a look-up table. The lookup table is defined by
     `lut` which should be an iterable object.

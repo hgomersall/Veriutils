@@ -3,7 +3,7 @@ from tests.base_hdl_test import HDLTestCase, TestCase
 from veriutils import *
 from myhdl import (intbv, modbv, enum, Signal, ResetSignal, instance,
                    delay, always, always_seq, Simulation, StopSimulation,
-                   toVHDL, always_comb)
+                   always_comb, block, BlockError)
 
 import unittest
 import copy
@@ -48,6 +48,7 @@ class CosimulationTestMixin(object):
                                   'clock': 'clock'}
         
         self.sim_checker = mock.Mock()
+        @block
         def identity_factory(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def identity():
@@ -143,6 +144,7 @@ class CosimulationTestMixin(object):
         '''
 
         sim_cycles = 20
+        @block
         def no_reset_identity_factory(test_input, test_output, clock):
             @always(clock.posedge)
             def identity():
@@ -195,6 +197,7 @@ class CosimulationTestMixin(object):
         instantiated block with all the signals set up already.
         '''
         mod_max = 20
+        @block
         def _custom_source(test_output, clock):
             counter = modbv(0, min=0, max=mod_max)
             reset = ResetSignal(bool(0), active=1, async=False)
@@ -205,8 +208,9 @@ class CosimulationTestMixin(object):
 
             return custom
 
-        custom_source = _custom_source(self.default_args['test_input'],
-                                       self.default_args['clock'])
+        custom_source = (_custom_source,
+                         (self.default_args['test_input'],
+                          self.default_args['clock']), {})
 
         sim_cycles = 20
         dut_results, ref_results = self.construct_simulate_and_munge(
@@ -229,6 +233,7 @@ class CosimulationTestMixin(object):
         custom_sources passed to the test object at instantiation.
         '''
         test_input = []
+        @block
         def _custom_reset_source(driven_reset, clock):
             reset = ResetSignal(bool(0), active=1, async=False)
             @always_seq(clock.posedge, reset=reset)
@@ -239,8 +244,9 @@ class CosimulationTestMixin(object):
 
             return custom
 
-        custom_source = _custom_reset_source(self.default_args['reset'],
-                                             self.default_args['clock'])
+        custom_source = (
+            _custom_reset_source,
+            (self.default_args['reset'], self.default_args['clock']), {})
 
 
         sim_cycles = 20
@@ -353,6 +359,7 @@ class CosimulationTestMixin(object):
         arg_types['test_input_interface'] = 'random'
         arg_types['test_output_interface'] = 'output'
 
+        @block
         def identity_factory(
             test_input, test_input_list, test_input_interface,
             test_output, test_output_list, test_output_interface,
@@ -372,6 +379,7 @@ class CosimulationTestMixin(object):
 
             return identity
 
+        @block
         def not_identity_factory(
             test_input, test_input_list, test_input_interface,
             test_output, test_output_list, test_output_interface,
@@ -414,6 +422,7 @@ class CosimulationTestMixin(object):
         args = copy.copy(self.default_args)
         arg_types = copy.copy(self.default_arg_types)
 
+        @block
         def identity_factory(test_input, test_input2, test_output, reset, clock):
 
             @always_comb
@@ -454,7 +463,8 @@ class CosimulationTestMixin(object):
         self.default_arg_types['test_input'] = 'custom'
         seed = randrange(0, 0x5EEDF00D)
 
-        custom_sources = [random_source(test_input, clock, reset, seed=seed)]
+        custom_sources = [
+            (random_source, (test_input, clock, reset), {'seed':seed})]
         _, ref_results = self.construct_simulate_and_munge(
             sim_cycles, self.identity_factory, self.identity_factory, 
             self.default_args, self.default_arg_types, 
@@ -463,7 +473,8 @@ class CosimulationTestMixin(object):
         # Mess with the signal states
         test_input._val = intbv(5, min=test_input.min, max=test_input.max)
 
-        custom_sources = [random_source(test_input, clock, reset, seed=seed)]
+        custom_sources = [
+            (random_source, (test_input, clock, reset), {'seed':seed})]
         _, ref_results2 = self.construct_simulate_and_munge(
             sim_cycles, self.identity_factory, self.identity_factory, 
             self.default_args, self.default_arg_types, 
@@ -476,34 +487,38 @@ class CosimulationTestMixin(object):
 
 
 
-    def test_dut_factory_returning_None_raises(self):
-        '''If the dut factory returns None, a ValueError should be raised.
+    def test_dut_factory_returning_invalid_raises(self):
+        '''If the dut factory returns something invalid, a 
+        BlockError should be raised.
         
-        The ValueError should contain information about which factory is 
+        The BlockError should contain information about which factory is 
         failing. Failing to return from the factory is a common mistake.
         '''
 
+        @block
         def none_factory(**kwargs):
             return None
 
-        self.assertRaisesRegex(ValueError, 'The dut factory returned a None '
-                               'object, not an instance',
+        self.assertRaisesRegex(BlockError, 'The dut factory returned an '
+                               'invalid object',
                                self.construct_simulate_and_munge, 30,
                                none_factory, self.identity_factory, 
                                self.default_args, self.default_arg_types)
 
-    def test_ref_factory_returning_None_raises(self):
-        '''If the ref factory returns None, a ValueError should be raised.
+    def test_ref_factory_returning_invalid_raises(self):
+        '''If the ref factory returns something invalid, a 
+        BlockError should be raised.
         
-        The ValueError should contain information about which factory is 
+        The BlockError should contain information about which factory is 
         failing. Failing to return from the factory is a common mistake.
         '''
 
+        @block
         def none_factory(**kwargs):
             return None
 
-        self.assertRaisesRegex(ValueError, 'The ref factory returned a None '
-                               'object, not an instance',
+        self.assertRaisesRegex(BlockError, 'The ref factory returned an '
+                               'invalid object',
                                self.construct_simulate_and_munge, 30,
                                self.identity_factory, none_factory,
                                self.default_args, self.default_arg_types)
@@ -528,6 +543,7 @@ class CosimulationTestMixin(object):
                 self.c = Signal(bool(0))
                 self.d = Signal(enum_vals.a)
 
+        @block
         def identity_factory(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def identity():
@@ -561,7 +577,7 @@ class CosimulationTestMixin(object):
         # The expected calls are found from what is recorded on the output.
         # These are recorded even during reset cycles, so we need to offset
         # those. 
-        # Also we record one cycle delayed from the sim_checker mock above,
+        # Also we record one cycl#e delayed from the sim_checker mock above,
         # so we need to offset left by that too.
         dut_expected_mock_calls = [
             mock.call(each['a'], each['b'], each['c'], each['d']) 
@@ -609,6 +625,7 @@ class CosimulationTestMixin(object):
         
         output_signal_list.append('not a signal')
 
+        @block
         def identity_factory(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def identity():
@@ -731,6 +748,7 @@ class CosimulationTestMixin(object):
 
         # A bit of a hack to check the relevant signals are different
         signals = []
+        @block
         def identity_factory(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def identity():
@@ -837,6 +855,7 @@ class CosimulationTestMixin(object):
                 self.a = Signal(intbv(0, min=min_val, max=max_val))
                 self.clock = Signal(bool(0))
 
+        @block
         def identity_factory(test_input, test_output, reset):
             @always_seq(test_input.clock.posedge, reset=reset)
             def identity():
@@ -879,6 +898,7 @@ class CosimulationTestMixin(object):
                 self.a = Signal(intbv(0, min=min_val, max=max_val))
                 self.reset = ResetSignal(bool(0), active=1, async=False)
 
+        @block
         def identity_factory(test_input, test_output, clock):
             @always_seq(clock.posedge, reset=test_input.reset)
             def identity():
@@ -920,6 +940,7 @@ class CosimulationTestMixin(object):
     def test_failing_case(self):
         '''The test object with wrong factories should have wrong output'''
 
+        @block
         def flipper_factory(test_input, test_output, reset, clock):
             '''Flips the output bits
             '''
@@ -951,6 +972,7 @@ class CosimulationTestMixin(object):
         Such arguments should have no representation in the results 
         dictionaries after simulation.
         '''
+        @block
         def non_sig_identity_factory(
             test_input, test_output, non_sig, reset, clock):
             @always_seq(clock.posedge, reset=reset)
@@ -1101,7 +1123,7 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         
         In order that the cosimulation class can be used to generate 
         converted code of the device under test, it should be possible to
-        provide a suitable method to MyHDL's toVHDL.
+        provide a block upon which `convert()` can be called.
 
         The text file to which the signal outputs should be written should 
         be the only argument to the method.
@@ -1118,6 +1140,7 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         args['test_input2'] = Signal(intbv(0)[10:])
         arg_types['test_input2'] = 'random'
 
+        @block
         def dut(test_input, test_input2, test_output, reset, clock):
 
             @always_seq(self.clock.posedge, reset)
@@ -1136,17 +1159,14 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
 
         test_obj.cosimulate(simulated_input_cycles)
 
-        # remember the toVHDL.directory state
         try:
-            toVHDL_directory_state = toVHDL.directory
-            toVHDL.directory = tmp_dir
 
-            toVHDL(test_obj.dut_convertible_top, temp_file)
+            top = test_obj.dut_convertible_top(temp_file)
+            top.convert(hdl='VHDL', path=tmp_dir)
 
             self.assertTrue(os.path.exists(output_file))
 
         finally:
-            toVHDL.directory = toVHDL_directory_state
             shutil.rmtree(tmp_dir)
 
     def test_dut_convertible_top_with_long_boolean_output(self):
@@ -1169,6 +1189,7 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         del args['test_input']
         del arg_types['test_input']
 
+        @block
         def dut(test_output, reset, clock):
 
             @always_seq(self.clock.posedge, reset)
@@ -1186,17 +1207,13 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
 
         test_obj.cosimulate(simulated_input_cycles)
 
-        # remember the toVHDL.directory state
         try:
-            toVHDL_directory_state = toVHDL.directory
-            toVHDL.directory = tmp_dir
-
-            toVHDL(test_obj.dut_convertible_top, temp_file)
+            top = test_obj.dut_convertible_top(temp_file)
+            top.convert(hdl='VHDL', path=tmp_dir)
 
             self.assertTrue(os.path.exists(output_file))
 
         finally:
-            toVHDL.directory = toVHDL_directory_state
             shutil.rmtree(tmp_dir)
 
     def test_dut_convertible_top_with_interface(self):
@@ -1219,6 +1236,7 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
                 self.b = Signal(intbv(0, min=min_val, max=max_val))
                 self.c = Signal(bool(0))
 
+        @block
         def dut(test_input, test_input2, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def test_dut():
@@ -1246,17 +1264,13 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
 
         test_obj.cosimulate(simulated_input_cycles)
 
-        # remember the toVHDL.directory state
         try:
-            toVHDL_directory_state = toVHDL.directory
-            toVHDL.directory = tmp_dir
-
-            toVHDL(test_obj.dut_convertible_top, temp_file)
+            top = test_obj.dut_convertible_top(temp_file)
+            top.convert(hdl='VHDL', path=tmp_dir)
 
             self.assertTrue(os.path.exists(output_file))
 
         finally:
-            toVHDL.directory = toVHDL_directory_state
             shutil.rmtree(tmp_dir)
 
     def test_dut_convertible_top_with_signal_list(self):
@@ -1281,11 +1295,14 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
 
         output_signal_list[missing_sig_idx] = 'also not a signal'
 
+        @block
         def dut(test_input, test_output, reset, clock):
             # We're dealing with the more general case of arbitrary
             # values in the list.
             # The specific problem of lists in the convertible code is a 
             # MyHDL problem.
+
+            @block
             def sig_copy(single_test_input, single_test_output, reset, clock):
 
                 @always_seq(clock.posedge, reset=reset)
@@ -1316,17 +1333,13 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
 
         test_obj.cosimulate(simulated_input_cycles)
 
-        # remember the toVHDL.directory state
         try:
-            toVHDL_directory_state = toVHDL.directory
-            toVHDL.directory = tmp_dir
-
-            toVHDL(test_obj.dut_convertible_top, temp_file)
+            top = test_obj.dut_convertible_top(temp_file)
+            top.convert(hdl='VHDL', path=tmp_dir)
 
             self.assertTrue(os.path.exists(output_file))
 
         finally:
-            toVHDL.directory = toVHDL_directory_state
             shutil.rmtree(tmp_dir)
 
     def test_ref_uses_original_output(self):
@@ -1335,6 +1348,8 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         This is important as it allows the output signal to be used by a
         custom source, and it is the reference that is used.
         '''
+
+        @block
         def useless_factory(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def useless():
@@ -1344,6 +1359,7 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
             return useless
 
         mod_max = 20
+        @block
         def _custom_source(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def custom():
@@ -1352,10 +1368,12 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
 
             return custom
 
-        custom_source = _custom_source(self.default_args['test_input'],
-                                       self.default_args['test_output'],
-                                       self.default_args['reset'],
-                                       self.default_args['clock'])
+        custom_source = [
+            _custom_source,
+            (self.default_args['test_input'],
+             self.default_args['test_output'],
+             self.default_args['reset'],
+             self.default_args['clock']), {}]
 
         sim_cycles = 20
         dut_results, ref_results = self.construct_simulate_and_munge(
@@ -1381,6 +1399,7 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
     def test_should_convert_with_non_signal_in_args(self):
         '''The conversion should happen when a non-signal was in the args.
         '''
+        @block
         def dut(
             test_input, test_output, non_sig, reset, clock):
             @always_seq(clock.posedge, reset=reset)
@@ -1406,17 +1425,13 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
 
         test_obj.cosimulate(sim_cycles)
 
-        # remember the toVHDL.directory state
         try:
-            toVHDL_directory_state = toVHDL.directory
-            toVHDL.directory = tmp_dir
-
-            toVHDL(test_obj.dut_convertible_top, temp_file)
+            top = test_obj.dut_convertible_top(temp_file)
+            top.convert(hdl='VHDL', path=tmp_dir)
 
             self.assertTrue(os.path.exists(output_file))
 
         finally:
-            toVHDL.directory = toVHDL_directory_state
             shutil.rmtree(tmp_dir)
 
 
@@ -1472,6 +1487,7 @@ class TestCosimulationFunction(CosimulationTestMixin, TestCase):
         self.assertIs(dut_results, None)
 
 
+@block
 def _broken_factory(test_input, test_output, reset, clock):
     
     @always_seq(clock.posedge, reset=reset)
@@ -1630,6 +1646,7 @@ class VivadoCosimulationFunctionTests(CosimulationTestMixin):
                 self.c = Signal(intbv(0, min=0, max=max_val))                
                 self.d = Signal(bool(0))
 
+        @block
         def identity_factory(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def identity():
@@ -1670,6 +1687,7 @@ class VivadoCosimulationFunctionTests(CosimulationTestMixin):
         output_signal_list = [
             Signal(intbv(0, min=-2**n, max=2**n-1)) for _ in range(1, N+1)]
 
+        @block
         def identity_factory(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
             def identity():
