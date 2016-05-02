@@ -3,12 +3,6 @@
 Veriutils is a collection of utilities for verification of HDL designs 
 created using MyHDL.
 
-Likely the most useful tools are `myhdl_cosimulation` and 
-`vivado_cosimulation`. These are two functions with compatible signatures
-that run a cosimulation of a pair of MyHDL blocks. There are various
-supported features like auto generation of random input vectors, clocks and
-reset initialisation.
-
 Until more complete docs are available, I suggest looking at the test code
 for a full description of the capabilities and how to use it (the doc strings
 for each test describe well the behaviour tested by that test).
@@ -18,36 +12,12 @@ It seems to be necessary to install with pip from a source distribution
 
     python setup.py sdist
     cd dist
-    sudo pip install Veriutils-0.2.tar.gz
+    sudo pip install Veriutils-0.3.tar.gz
 
-In order to use Vivado, it is necessary to set up your environment. Under
-linux, this is something like:
-
-    source /opt/Xilinx/Vivado/2014.4/settings64.sh
-
-I imagine there's something similar under Windows (though I've not tested it).
-
-If the executable is not in the path, the relevant tests will be skipped, or
-if you try to use the Vivado cosimulation, an `EnvironmentError` will be 
-raised.
-
-Again, to use the Vivado capability, it is necessary to have a `veriutils.cfg`
-file in the current working directory. An example one is provided.
-
-Encrypted IP is supported. This is used by adding an attribute 
-`ip_dependencies` to the MyHDL device under test factory (much like one adds
-`vhdl_code` or `name` attributes). This should be a list of strings with each
-string being present in `veriutils.cfg` under the `[IP Paths]` section (and
-a suitable path to the `.xci` file given). See the example `veriutils.cfg`.
-See the dsp48e1 example in the `examples` directory for a complete 
-demonstration of its usage. This uses the example `veriutils.cfg` file.
-
-Currently it is necessary to have the simulation template somewhere and
-referenced in `veriutils.cfg`. Just copying the one in `vivado/templates/` is
-probably enough.
-
-If additional vhdl files are necessary, they can be included (with a full
-path) in the `vhdl_dependencies` attribute in the test factory.
+The Vivado specific code has now been moved out into it's own project 
+called [Ovenbird](https://github.com/hgomersall/Ovenbird), which works
+with Veriutils to provide (among other things) Vivado cosimulation 
+capabilities.
 
 The code is released under the BSD 3 clause license. See License.txt for the 
 text of this.

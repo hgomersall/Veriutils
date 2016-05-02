@@ -3,7 +3,6 @@ branch = True
 
 source = 
     veriutils
-    tests
 
 [report]
 exclude_lines = 

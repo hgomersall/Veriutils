@@ -1,5 +1,5 @@
 
-from tests.base_hdl_test import HDLTestCase, TestCase
+from veriutils.tests.base_hdl_test import HDLTestCase, TestCase
 from veriutils import *
 from myhdl import *
 import myhdl
@@ -1520,7 +1520,7 @@ class TestLutSignalDriver(TestCase):
             assert (log(len(lut), 2) % 2 != 0)
 
             test_block = lut_signal_driver(test_signal, lut, clock)
-            test_block.convert(hdl='VHDL')
+            test_block.convert(hdl='VHDL', path=tmp_dir)
 
         finally:
             shutil.rmtree(tmp_dir)
@@ -1543,7 +1543,7 @@ class TestLutSignalDriver(TestCase):
             assert (log(len(lut), 2) % 2 != 0)
 
             test_block = lut_signal_driver(test_signal, lut, clock)
-            test_block.convert(hdl='Verilog')
+            test_block.convert(hdl='Verilog', path=tmp_dir)
 
         finally:
             shutil.rmtree(tmp_dir)
