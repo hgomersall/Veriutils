@@ -591,19 +591,9 @@ class SynchronousTest(object):
             self.output_recorder_factories.append(ref_recorder)
             
 
-        #ref_instance = ref_factory(**self.ref_args)
-        #if ref_instance is None:
-        #    raise ValueError('The ref factory returned a None '
-        #                     'object, not an instance')
-
         self.test_factories = [(ref_factory, (), self.ref_args)]
 
         if dut_factory is not None:
-            #dut_instance = dut_factory(**self.dut_args)        
-            #if dut_instance is None:
-            #    raise ValueError('The dut factory returned a None '
-            #                     'object, not an instance')
-            
             self.test_factories += [(dut_factory, (), self.dut_args)]
 
         self._dut_factory = dut_factory

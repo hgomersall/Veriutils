@@ -993,6 +993,39 @@ class CosimulationTestMixin(object):
         self.assertNotIn('non_sig', dut_results)
         self.assertNotIn('non_sig', ref_results)
 
+    def test_StopSimulation_case(self):
+        '''It should be possible to call StopSimulation to truncate the sim
+        time
+        '''
+
+        sim_cycles = 30
+
+        @block
+        def stopper(clock):
+
+            count = [0]
+            # We count in the middle of a cycle
+            @always(clock.negedge)
+            def inst():
+                count[0] += 1                
+
+                if count[0] > 20:
+                    raise StopSimulation
+
+            return inst
+
+        custom_source = (stopper, (self.default_args['clock'],), {})
+
+        dut_results, ref_results = self.construct_simulate_and_munge(
+            sim_cycles, self.identity_factory, self.identity_factory, 
+            self.default_args, self.default_arg_types, 
+            custom_sources=[custom_source])
+        
+
+        for signal in dut_results:
+            self.assertTrue(len(ref_results[signal]) == 20)
+            self.assertEqual(dut_results[signal], ref_results[signal])
+
 
 class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
     '''The SynchronousTest class should provide the core of the cosimulation.
