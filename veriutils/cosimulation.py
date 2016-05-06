@@ -179,12 +179,12 @@ def _expand_to_signal_list(signal_obj, depth=0):
 
                 if each_signal_list == []:
                     # Not a signal returned, and recursion limit reached.
-                    break
+                    continue
 
                 signal_list += each_signal_list
                 attribute_name_list += [(each, each_attr_name_list)]
                 
-        except AttributeError:
+        except AttributeError as e:
             # A non-signal, non-interface
             return [], []
 
@@ -209,7 +209,6 @@ def _types_from_signal_hierarchy(hierarchy, types):
 
     This might propagate down the hierarchy from a string, or be a dict.
     '''
-
     if len(hierarchy) == 0:
         _types = [types]
 
@@ -267,6 +266,7 @@ def _create_flattened_args(args, arg_types):
 
         if arg_types[each_arg_name] == 'non-signal':
             non_signal_list.append(each_arg_name)
+            continue
         else:
             each_signal_name = each_arg_name
 
@@ -277,8 +277,7 @@ def _create_flattened_args(args, arg_types):
 
         hierarchy_types = _types_from_signal_hierarchy(
             attribute_name_list, arg_types[each_signal_name])
-
-        if len(_signal_list) == 1:
+        if len(_signal_list) == 1 and len(attribute_name_list) == 0:
             flattened_args[each_signal_name] = _signal_list[0]
             flattened_arg_types[each_signal_name] = (
                 arg_types[each_signal_name])
@@ -313,17 +312,32 @@ def _create_flattened_args(args, arg_types):
 
         else:
             name_idx = 0
+            sig_n = 0
+            while True:
+                interface_name = each_signal_name + str(name_idx)
+                name_idx += 1
+                if interface_name not in arg_list:
+                    break
+
             # The following currently only works with one level of
             # interface hierarchy
             for each_sub_signal, each_interface_lookup, each_type in zip(
                 _signal_list, attribute_name_list, hierarchy_types):
 
                 # Get a unique signal name
+                # Try the obvious name first
+                sub_signal_name = (
+                    interface_name + '_' + each_interface_lookup[0])
+                subname_idx = 0
                 while True:
-                    sub_signal_name = each_signal_name + str(name_idx)
-                    name_idx += 1                        
                     if sub_signal_name not in arg_list:
                         break
+
+                    else:
+                        sub_signal_name = (
+                            interface_name + '_' + each_interface_lookup[0] + 
+                            str(subname_idx))
+                        subname_idx += 1                        
 
                 flattened_args[sub_signal_name] = each_sub_signal
                 # As we said above, we only support one level of

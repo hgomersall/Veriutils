@@ -602,6 +602,84 @@ class CosimulationTestMixin(object):
         for signal in dut_results:
             self.assertEqual(dut_results[signal], ref_results[signal])
 
+    def test_interface_with_non_signal_attribute(self):
+        '''It should be possible to work with interfaces that contain an 
+        attribute that is not a Signal.'''
+
+        args = self.default_args.copy()
+
+        min_val = -1000
+        max_val = 1000
+
+        class Interface(object):
+            def __init__(self):
+                self.a = 'not a signal'
+                self.b = 'not a signal'
+                self.c = 'not a signal'
+                self.d = 'not a signal'
+                self.e = 'not a signal'
+                self.f = 'not a signal'
+                self.g = 'not a signal'
+                self.h = 'not a signal'
+                self.sig = Signal(intbv(0, min=min_val, max=max_val))
+
+                assert self.__dict__.keys()[0] != 'sig'
+
+        @block
+        def identity_factory(test_input, test_output, reset, clock):
+            @always_seq(clock.posedge, reset=reset)
+            def identity():
+                if __debug__:
+                    self.sim_checker(copy.copy(test_input.sig.val))
+
+                test_output.sig.next = test_input.sig
+
+            return identity            
+
+        args['test_input'] = Interface()
+        args['test_output'] = Interface()
+
+        sim_cycles = 31
+
+        dut_results, ref_results = self.construct_simulate_and_munge(
+            sim_cycles, identity_factory, identity_factory, 
+            args, self.default_arg_types)
+
+        # The mock should be called twice per cycle, with the caveat that
+        # it is not called at all on the reset cycles.
+        assert len(self.sim_checker.call_args_list) == (
+            (sim_cycles - self.reset_cycles) * 2)
+
+        # The expected calls are found from what is recorded on the output.
+        # These are recorded even during reset cycles, so we need to offset
+        # those. 
+        # Also we record one cycl#e delayed from the sim_checker mock above,
+        # so we need to offset left by that too.
+        dut_expected_mock_calls = [
+            mock.call(each['sig']) 
+            for each in dut_results['test_output'][self.reset_cycles:][1:]]
+
+        ref_expected_mock_calls = [
+            mock.call(each['sig']) 
+            for each in ref_results['test_output'][self.reset_cycles:][1:]]
+
+        # The sim checker args should be shifted up by one sample since
+        # they record a sample earlier than the recorded outputs.
+        out_signals = zip(self.sim_checker.call_args_list[::2][:-1],
+                          self.sim_checker.call_args_list[1::2][:-1],
+                          dut_expected_mock_calls,
+                          ref_expected_mock_calls)
+
+        for dut_arg, ref_arg, expected_dut, expected_ref in out_signals:
+            # Should be true (defined by the test)
+            assert dut_arg == ref_arg
+
+            self.assertEqual(dut_arg, expected_dut)
+            self.assertEqual(ref_arg, expected_ref)
+
+        for signal in dut_results:
+            self.assertEqual(dut_results[signal], ref_results[signal])
+
     def test_signal_list_arg(self):
         '''It should be possible to work with lists of signals.
 
