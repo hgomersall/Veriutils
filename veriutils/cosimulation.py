@@ -627,6 +627,9 @@ class SynchronousTest(object):
         signals (in the order they were passed) of respectively the 
         device under test and the reference design.
 
+        if ``cycles`` is None, then the simulation continues until 
+        StopSimulation is raised.
+
         If vcd_name is not None, a vcd file will be created of the 
         '''
 
@@ -729,7 +732,12 @@ class SynchronousTest(object):
             trace = False
         
         top_level_block.config_sim(trace=trace)
-        top_level_block.run_sim(duration=cycles*self.period, quiet=1)
+
+        if cycles is not None:
+            top_level_block.run_sim(duration=cycles*self.period, quiet=1)
+        else:
+            top_level_block.run_sim(duration=None, quiet=1)
+
         top_level_block.quit_sim()
 
         self._simulator_run = True

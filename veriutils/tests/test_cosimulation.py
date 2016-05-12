@@ -1104,6 +1104,40 @@ class CosimulationTestMixin(object):
             self.assertTrue(len(ref_results[signal]) == 20)
             self.assertEqual(dut_results[signal], ref_results[signal])
 
+    def test_None_cycles_case(self):
+        '''It should be possible to set cycles to None during a simulation,
+        in which the case the simulation will run until StopSimulation is
+        raised.
+        '''
+
+        sim_cycles = None
+
+        @block
+        def stopper(clock):
+
+            count = [0]
+            # We count in the middle of a cycle
+            @always(clock.negedge)
+            def inst():
+                count[0] += 1                
+
+                if count[0] > 20:
+                    raise StopSimulation
+
+            return inst
+
+        custom_source = (stopper, (self.default_args['clock'],), {})
+
+        dut_results, ref_results = self.construct_simulate_and_munge(
+            sim_cycles, self.identity_factory, self.identity_factory, 
+            self.default_args, self.default_arg_types, 
+            custom_sources=[custom_source])
+        
+
+        for signal in dut_results:
+            self.assertTrue(len(ref_results[signal]) == 20)
+            self.assertEqual(dut_results[signal], ref_results[signal])
+
 
 class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
     '''The SynchronousTest class should provide the core of the cosimulation.
