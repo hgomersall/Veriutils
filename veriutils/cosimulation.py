@@ -375,7 +375,7 @@ class SynchronousTest(object):
             * `'non-signal'`
 
         * The `'clock'` arg is auto-connected to a clock generator. There 
-        should be at least one clock object.
+        should be one and only one clock object.
         * `'init_reset'` should be a reset signal, and is auto-connected to
         a reset generator that drives active for a few cycles, then goes 
         inactive. That is, it resets at initialization.
@@ -399,11 +399,14 @@ class SynchronousTest(object):
 
         ``period`` sets the clock period.
 
-        ``custom_sources`` is a list of sources that are simply appended
-        to the simulation instance list. Each custom source should be a valid
-        myhdl generator, but no checking is done to make sure. Any sources
-        that are needed to support the `'custom'` or `'custom_reset'` args
-        should be included in this list.
+        ``custom_sources`` is a list of tuples as 
+        ``(myhdl_block, *args, **kwargs)``, which is instantiated at 
+        simulation or conversion time. ``args`` and ``kwargs`` correspond
+        to the arguments and keyword arguments needed to instantiate each
+        custom source. ``myhdl_block`` should be a callable block object.
+        
+        Any sources that are needed to support the `'custom'` or
+        `'custom_reset'` args should be included in this list.
         '''
 
         valid_arg_types = ('clock', 'init_reset', 'random', 'output', 
@@ -982,8 +985,6 @@ class SynchronousTest(object):
 
         # Finally, add the device under test
         instances.append(self._dut_factory(**dut_args))
-
-        self.dut_convertible_top.ip_instances = 10
 
         return instances
 
