@@ -539,10 +539,10 @@ class TestAxiStreamMasterBFM(TestCase):
         myhdl_cosimulation(
             10, None, testbench, self.args, self.arg_types)
 
-    def test_TREADY_False_pauses_transfer(self):
+    def test_TREADY_False_pauses_valid_transfer(self):
         '''When the slave sets TREADY to False, no data should be sent, but
-        the data should not be lost. Transfers should continue again as soon as
-        TREADY is True.
+        the data should not be lost. Transfers should continue again as soon 
+        as TREADY is True.
         '''
 
         @block
@@ -594,6 +594,169 @@ class TestAxiStreamMasterBFM(TestCase):
 
             self.assertTrue(cycle_count[0] == total_data_len)
 
+    def test_None_in_packets_sets_TVALID_False(self):
+        '''Inserting a ``None`` into a packet should cause a cycle in which
+        the ``TVALID`` flag is set ``False``.
+        '''
+        @block
+        def testbench(clock):
+
+            bfm = self.stream.model(clock, self.interface)
+            inst_data = {'first_run': True,
+                         'packet': deque([])}
+
+            @always(clock.posedge)
+            def inst():
+                self.interface.TREADY.next = True
+
+                if inst_data['first_run']:
+                    assert not self.interface.TVALID
+                    inst_data['first_run'] = False
+
+                else:
+                    next_expected_val = _get_next_val(packet_list, inst_data)
+
+                    if next_expected_val is None:
+                        assert not self.interface.TVALID
+                        cycle_count[0] += 1
+
+                    else:
+                        assert self.interface.TVALID
+                        assert self.interface.TDATA == next_expected_val
+                        cycle_count[0] += 1
+
+                # Stop if there is nothing left to process
+                if len(inst_data['packet']) == 0:
+                    if (len(packet_list) == 0):
+                        raise StopSimulation
+
+                    elif all(len(each) == 0 for each in packet_list):
+                        raise StopSimulation
+
+            return inst, bfm
+
+        max_packet_length = self.max_packet_length
+        max_new_packets = self.max_new_packets
+
+        def val_gen(data_byte_width):
+            # Generates Nones about half the time probability
+            val = random.randrange(0, 2**(8 * self.data_byte_width))
+            if val > 2**(8 * self.data_byte_width - 1):
+                return None
+            else:
+                return val
+
+        for n in range(30):
+
+            packet_list = deque(
+                [deque([
+                    val_gen(self.data_byte_width) for m 
+                    in range(random.randrange(0, max_packet_length))]) for n 
+                    in range(random.randrange(0, max_new_packets))])
+
+            self.add_packets_to_stream(packet_list)
+
+            total_data_len = sum(len(each) for each in packet_list)
+            cycle_count = [0]
+
+            myhdl_cosimulation(
+                None, None, testbench, self.args, self.arg_types)
+
+            self.assertEqual(total_data_len, cycle_count[0])
+
+    def test_None_in_packets_for_one_cycle_only(self):
+        '''If the data was ``None``, corresponding to setting 
+        ``TVALID = False``, it should always only last for a single clock
+        cycle before it is discarded.
+        '''
+        
+        @block
+        def testbench(clock):
+
+            bfm = self.stream.model(clock, self.interface)
+            inst_data = {'first_run': True,
+                         'packet': deque([]),
+                         'stored_val': None}
+
+            @always(clock.posedge)
+            def inst():
+
+                if random.random() < ready_probability:
+                    # Set TREADY True
+                    self.interface.TREADY.next = True
+                else:
+                    # Set TREADY False
+                    self.interface.TREADY.next = False
+                
+                if inst_data['first_run']:
+                    assert not self.interface.TVALID
+                    inst_data['first_run'] = False
+
+                else:
+                    if inst_data['stored_val'] is None:
+                        next_expected_val = (
+                            _get_next_val(packet_list, inst_data))
+
+                    else:
+                        next_expected_val = inst_data['stored_val']
+
+                    if next_expected_val is None:
+                        assert not self.interface.TVALID
+                        cycle_count[0] += 1
+
+                    else:
+                        if not self.interface.TREADY:
+                            inst_data['stored_val'] = next_expected_val
+
+                        else:
+                            inst_data['stored_val'] = None
+                            assert self.interface.TVALID
+                            assert self.interface.TDATA == next_expected_val
+                            cycle_count[0] += 1
+
+                # Stop if there is nothing left to process
+                if (inst_data['stored_val'] is None and 
+                    len(inst_data['packet']) == 0):
+
+                    if (len(packet_list) == 0):
+                        raise StopSimulation
+
+                    elif all(len(each) == 0 for each in packet_list):
+                        raise StopSimulation
+
+            return inst, bfm
+
+        max_packet_length = self.max_packet_length
+        max_new_packets = self.max_new_packets
+
+        def val_gen(data_byte_width):
+            # Generates Nones about half the time probability
+            val = random.randrange(0, 2**(8 * self.data_byte_width))
+            if val > 2**(8 * self.data_byte_width - 1):
+                return None
+            else:
+                return val
+
+        for n in range(5):
+            ready_probability = 0.2 * (n + 1)
+
+            packet_list = deque(
+                [deque([
+                    val_gen(self.data_byte_width) for m 
+                    in range(random.randrange(0, max_packet_length))]) for n 
+                    in range(random.randrange(0, max_new_packets))])
+
+            self.add_packets_to_stream(packet_list)
+
+            total_data_len = sum(len(each) for each in packet_list)
+            cycle_count = [0]
+
+            myhdl_cosimulation(
+                None, None, testbench, self.args, self.arg_types)
+
+            self.assertEqual(total_data_len, cycle_count[0])
+
+
     def test_alternative_ID_and_destinations(self):
         '''It should be possible to set the ID and destination with the
         ``add_data`` method.
@@ -607,25 +770,36 @@ class TestAxiStreamMasterBFM(TestCase):
         def testbench(clock):
 
             bfm = self.stream.model(clock, self.interface)
-            inst_data = {}
+            inst_data = {'first_run': True,
+                         'packet': []}
+
             @always(clock.posedge)
             def inst():
                 self.interface.TREADY.next = True
 
-                if self.interface.TVALID:
-                    next_expected_val = _get_next_val(packet_list, inst_data)
-
-                    assert self.interface.TDATA == next_expected_val
-                    cycle_count[0] += 1
+                if inst_data['first_run']:
+                    assert not self.interface.TVALID
+                    inst_data['first_run'] = False
 
                 else:
-                    # Stop if there is nothing left to process
-                    if len(packet_list) == 0:
+                    next_expected_val = _get_next_val(packet_list, inst_data)
+
+                    if next_expected_val is None:
+                        assert not self.interface.TVALID
+                        cycle_count[0] += 1
+
+                    else:
+                        assert self.interface.TVALID
+                        assert self.interface.TDATA == next_expected_val
+                        cycle_count[0] += 1
+
+                # Stop if there is nothing left to process
+                if len(inst_data['packet']) == 0:
+                    if (len(packet_list) == 0):
                         raise StopSimulation
 
                     elif all(len(each) == 0 for each in packet_list):
                         raise StopSimulation
-
 
             return inst, bfm
 

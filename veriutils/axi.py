@@ -100,6 +100,11 @@ class AxiStreamMasterBFM(object):
         '''Add data to this BFM. ``data`` is a list of lists, each sublist of
         which comprises a packet (terminated by ``TKEEP`` being asserted).
 
+        Values inside each packet (i.e. the inner lists) can be ``None``, in
+        which case the value acts like a no-op, setting the ``TVALID`` flag to
+        ``False`` for that data value. This allows the calling code to insert
+        delays in the data output.
+
         The ``stream_ID`` and ``stream_destination`` parameters are used to 
         set the ``TID`` and ``TDEST`` signals respectively for the data 
         provided.
@@ -117,13 +122,14 @@ class AxiStreamMasterBFM(object):
     def model(self, clock, interface):
 
         model_rundata = {}
+        None_data = Signal(False)
 
         @always(clock.posedge)
         def model_inst():
             
             # We need to try to update either when a piece of data has been 
             # propagated (TVALID and TREADY) or when we previously didn't
-            # have any data (not TVALID)
+            # have any data, or the data was None (not TVALID)
             if ((interface.TVALID and interface.TREADY) or 
                 not interface.TVALID):
 
@@ -143,19 +149,27 @@ class AxiStreamMasterBFM(object):
                         except KeyError:
                             break
 
-                if len(model_rundata['packet']) > 1:
-                    interface.TDATA.next = model_rundata['packet'].popleft()
-                    interface.TLAST.next = False
-                    interface.TVALID.next = True
+                if len(model_rundata['packet']) > 0:
 
-                elif len(model_rundata['packet']) == 1:
-                    # End of a packet
-                    interface.TDATA.next = model_rundata['packet'].popleft()
-                    interface.TLAST.next = True
-                    interface.TVALID.next = True
+                    if len(model_rundata['packet']) == 1:
+                        interface.TLAST.next = True
+                        value = model_rundata['packet'].popleft()
 
-                    # Nothing left in the packet
-                    del model_rundata['packet']
+                        # Nothing left in the packet
+                        del model_rundata['packet']
+
+                    else:
+                        interface.TLAST.next = False
+                        value = model_rundata['packet'].popleft()
+
+                    if value is not None:
+                        None_data.next = False
+                        interface.TDATA.next = value
+                        interface.TVALID.next = True
+
+                    else:
+                        None_data.next = True
+                        interface.TVALID.next = False
 
                 else:
                     interface.TVALID.next = False
