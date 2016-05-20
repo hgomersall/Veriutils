@@ -757,60 +757,60 @@ class TestAxiStreamMasterBFM(TestCase):
             self.assertEqual(total_data_len, cycle_count[0])
 
 
-    def test_alternative_ID_and_destinations(self):
-        '''It should be possible to set the ID and destination with the
-        ``add_data`` method.
-
-        All the data set for each pairing of ID and destination should
-        exist on a separate FIFO and the data should be interleaved 
-        randomly.
-        '''
-        raise NotImplementedError
-        @block
-        def testbench(clock):
-
-            bfm = self.stream.model(clock, self.interface)
-            inst_data = {'first_run': True,
-                         'packet': []}
-
-            @always(clock.posedge)
-            def inst():
-                self.interface.TREADY.next = True
-
-                if inst_data['first_run']:
-                    assert not self.interface.TVALID
-                    inst_data['first_run'] = False
-
-                else:
-                    next_expected_val = _get_next_val(packet_list, inst_data)
-
-                    if next_expected_val is None:
-                        assert not self.interface.TVALID
-                        cycle_count[0] += 1
-
-                    else:
-                        assert self.interface.TVALID
-                        assert self.interface.TDATA == next_expected_val
-                        cycle_count[0] += 1
-
-                # Stop if there is nothing left to process
-                if len(inst_data['packet']) == 0:
-                    if (len(packet_list) == 0):
-                        raise StopSimulation
-
-                    elif all(len(each) == 0 for each in packet_list):
-                        raise StopSimulation
-
-            return inst, bfm
-
-        for n in range(30):
-            packet_list = self.add_random_packets_to_stream(
-                self.max_packet_length, self.max_new_packets)
-
-            total_data_len = sum(len(each) for each in packet_list)
-            cycle_count = [0]
-
-            myhdl_cosimulation(
-                None, None, testbench, self.args, self.arg_types)
-
-            self.assertEqual(total_data_len, cycle_count[0])
+#    def test_alternative_ID_and_destinations(self):
+#        '''It should be possible to set the ID and destination with the
+#        ``add_data`` method.
+#
+#        All the data set for each pairing of ID and destination should
+#        exist on a separate FIFO and the data should be interleaved 
+#        randomly.
+#        '''
+#        raise NotImplementedError
+#        @block
+#        def testbench(clock):
+#
+#            bfm = self.stream.model(clock, self.interface)
+#            inst_data = {'first_run': True,
+#                         'packet': []}
+#
+#            @always(clock.posedge)
+#            def inst():
+#                self.interface.TREADY.next = True
+#
+#                if inst_data['first_run']:
+#                    assert not self.interface.TVALID
+#                    inst_data['first_run'] = False
+#
+#                else:
+#                    next_expected_val = _get_next_val(packet_list, inst_data)
+#
+#                    if next_expected_val is None:
+#                        assert not self.interface.TVALID
+#                        cycle_count[0] += 1
+#
+#                    else:
+#                        assert self.interface.TVALID
+#                        assert self.interface.TDATA == next_expected_val
+#                        cycle_count[0] += 1
+#
+#                # Stop if there is nothing left to process
+#                if len(inst_data['packet']) == 0:
+#                    if (len(packet_list) == 0):
+#                        raise StopSimulation
+#
+#                    elif all(len(each) == 0 for each in packet_list):
+#                        raise StopSimulation
+#
+#            return inst, bfm
+#
+#        for n in range(30):
+#            packet_list = self.add_random_packets_to_stream(
+#                self.max_packet_length, self.max_new_packets)
+#
+#            total_data_len = sum(len(each) for each in packet_list)
+#            cycle_count = [0]
+#
+#            myhdl_cosimulation(
+#                None, None, testbench, self.args, self.arg_types)
+#
+#            self.assertEqual(total_data_len, cycle_count[0])

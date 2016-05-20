@@ -96,7 +96,7 @@ class AxiStreamMasterBFM(object):
         '''
         self._data = {}
 
-    def add_data(self, data, stream_ID=0, stream_destination=0):
+    def add_data(self, data):#, stream_ID=0, stream_destination=0):
         '''Add data to this BFM. ``data`` is a list of lists, each sublist of
         which comprises a packet (terminated by ``TKEEP`` being asserted).
 
@@ -104,11 +104,15 @@ class AxiStreamMasterBFM(object):
         which case the value acts like a no-op, setting the ``TVALID`` flag to
         ``False`` for that data value. This allows the calling code to insert
         delays in the data output.
-
-        The ``stream_ID`` and ``stream_destination`` parameters are used to 
-        set the ``TID`` and ``TDEST`` signals respectively for the data 
-        provided.
         '''
+        #The ``stream_ID`` and ``stream_destination`` parameters are used to 
+        #set the ``TID`` and ``TDEST`` signals respectively for the data 
+        #provided.
+        #'''
+
+        stream_ID = 0
+        stream_destination = 0
+
         try:
             self._data[(stream_ID, stream_destination)].extend(
                 deque([deque(packet) for packet in data]))
@@ -124,6 +128,9 @@ class AxiStreamMasterBFM(object):
         model_rundata = {}
         None_data = Signal(False)
 
+        stream_ID = 0
+        stream_destination = 0
+
         @always(clock.posedge)
         def model_inst():
             
@@ -138,10 +145,12 @@ class AxiStreamMasterBFM(object):
                     while len(model_rundata['packet']) == 0:
 
                         try:
-                            if len(self._data[(0, 0)]) > 0:
-                                model_rundata['packet'] = (
-                                    self._data[(0, 0)].popleft())
+                            if len(self._data[
+                                (stream_ID, stream_destination)]) > 0:
 
+                                model_rundata['packet'] = self._data[
+                                    (stream_ID, stream_destination)].popleft()
+                                
                             else:
                                 # Nothing left to get, so we drop out.
                                 break
@@ -166,7 +175,6 @@ class AxiStreamMasterBFM(object):
                         None_data.next = False
                         interface.TDATA.next = value
                         interface.TVALID.next = True
-
                     else:
                         None_data.next = True
                         interface.TVALID.next = False
