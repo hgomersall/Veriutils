@@ -1,5 +1,7 @@
 from myhdl import *
 from collections import deque
+import copy
+import random
 
 class AxiStreamInterface(object):
     '''The AXI stream interface definition'''
@@ -185,5 +187,55 @@ class AxiStreamMasterBFM(object):
                     # next time
                     del model_rundata['packet']
 
+
+        return model_inst
+
+class AxiStreamSlaveBFM(object):
+
+    @property
+    def current_packet(self):
+        return [copy.copy(val) for val in self._current_packet]
+
+    @property
+    def completed_packets(self):
+        copied_completed_packets = []
+        for packet in self._completed_packets:
+            copied_completed_packets.append(
+                [copy.copy(val) for val in packet])
+
+        return copied_completed_packets
+
+    def __init__(self):
+        '''Create an AXI4 Stream slave bus functional model (BFM).
+
+        Valid data that is received is recorded. Completed packets are 
+        available for inspection through the ``completed_packets`` 
+        property.
+
+        Currently ``TUSER`` is ignored.
+        '''
+        self._completed_packets = []
+        self._current_packet = []
+
+    @block
+    def model(self, clock, interface, TREADY_probability=1.0):
+
+        @always(clock.posedge)
+        def model_inst():
+            if TREADY_probability > random.random():
+                interface.TREADY.next = True
+            else:
+                interface.TREADY.next = False
+
+            if interface.TVALID and interface.TREADY:
+                self._current_packet.append(copy.copy(interface.TDATA._val))
+                
+                if interface.TLAST:
+                    # End of a packet, so copy the current packet into 
+                    # complete_packets and empty the current packet.
+                    self._completed_packets.append(
+                        copy.copy(self._current_packet))
+
+                    del self._current_packet[:]
 
         return model_inst

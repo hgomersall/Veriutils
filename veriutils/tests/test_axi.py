@@ -208,6 +208,29 @@ def _get_next_val(packet_list, instance_data):
     
     return next_val
 
+def _add_packets_to_stream(stream, packet_list):
+    '''Adds the supplied packets to the stream and returns them.
+    '''
+    packet_list = deque(deque(packet) for packet in packet_list)
+    stream.add_data(packet_list)
+    return packet_list
+
+def _add_random_packets_to_stream(
+    stream, max_packet_length, max_new_packets, max_val):
+    '''Adds a load of random data to the stream and returns 
+    the list of added packets.
+
+    Each packet is of random length between 0 and max_packet_length
+    and there are a random number between 0 and max_new_packets of 
+    them.
+    '''
+    packet_list = deque(
+        [deque([random.randrange(0, max_val) for m 
+                in range(random.randrange(0, max_packet_length))]) for n 
+         in range(random.randrange(0, max_new_packets))])
+
+    return _add_packets_to_stream(stream, packet_list)
+
 class TestAxiStreamMasterBFM(TestCase):
     '''There should be an AXI Stream Bus Functional Model that implements
     a programmable AXI4 Stream protocol from the master side.
@@ -218,6 +241,7 @@ class TestAxiStreamMasterBFM(TestCase):
         self.data_byte_width = 8
         self.max_packet_length = 10
         self.max_new_packets = 5
+        self.max_rand_val = 2**(8 * self.data_byte_width)
 
         self.stream = AxiStreamMasterBFM()
         self.interface = AxiStreamInterface(self.data_byte_width)
@@ -225,31 +249,6 @@ class TestAxiStreamMasterBFM(TestCase):
 
         self.args = {'clock': clock}
         self.arg_types = {'clock': 'clock'}
-
-    def add_packets_to_stream(self, packet_list):
-        '''Adds the supplied packets to the stream and returns them.
-        '''
-        packet_list = deque(deque(packet) for packet in packet_list)
-        self.stream.add_data(packet_list)
-        return packet_list
-
-    def add_random_packets_to_stream(
-        self, max_packet_length, max_new_packets):
-        '''Adds a load of random data to the stream and returns 
-        the list of added packets.
-
-        Each packet is of random length between 0 and max_packet_length
-        and there are a random number between 0 and max_new_packets of 
-        them.
-        '''
-        packet_list = deque(
-            [deque([
-                random.randrange(0, 2**(8 * self.data_byte_width)) for m 
-                in range(random.randrange(0, max_packet_length))]) for n 
-             in range(random.randrange(0, max_new_packets))])
-
-        return self.add_packets_to_stream(packet_list)
-
 
     def test_single_stream_data(self):
         '''It should be possible to set the data for a single stream.
@@ -285,8 +284,9 @@ class TestAxiStreamMasterBFM(TestCase):
             return inst, bfm
 
         for n in range(30):
-            packet_list = self.add_random_packets_to_stream(
-                self.max_packet_length, self.max_new_packets)
+            packet_list = _add_random_packets_to_stream(
+                self.stream, self.max_packet_length, self.max_new_packets, 
+                self.max_rand_val)
 
             total_data_len = sum(len(each) for each in packet_list)
             cycle_count = [0]
@@ -339,8 +339,9 @@ class TestAxiStreamMasterBFM(TestCase):
 
         #run the test several times to better sample the test space
         for n in range(30):
-            packet_list = self.add_random_packets_to_stream(
-                self.max_packet_length, self.max_new_packets)
+            packet_list = _add_random_packets_to_stream(
+                self.stream, self.max_packet_length, self.max_new_packets,
+                self.max_rand_val)
             total_data_len = sum(len(each) for each in packet_list)
             cycle_count = [0]
         
@@ -415,16 +416,17 @@ class TestAxiStreamMasterBFM(TestCase):
             [[10], [], []])
 
         for _packet_list in explicit_cases:
-            add_packets_to_stream = lambda: self.add_packets_to_stream(
-                _packet_list)
+            add_packets_to_stream = lambda: _add_packets_to_stream(
+                self.stream, _packet_list)
             packet_list = add_packets_to_stream()
             total_data_len = [0]
             cycle_count = [0]
             checks()
 
         #run the test several times to better sample test space
-        add_packets_to_stream = lambda: self.add_random_packets_to_stream(
-            self.max_packet_length, self.max_new_packets)
+        add_packets_to_stream = lambda: _add_random_packets_to_stream(
+            self.stream, self.max_packet_length, self.max_new_packets,
+            self.max_rand_val)
 
         for n in range(30):
             packet_list = add_packets_to_stream()
@@ -500,16 +502,17 @@ class TestAxiStreamMasterBFM(TestCase):
             [[10], [20], [30]])
 
         for _packet_list in (explicit_cases):
-            add_packets_to_stream = lambda: self.add_packets_to_stream(
-                _packet_list)
+            add_packets_to_stream = lambda: _add_packets_to_stream(
+                self.stream, _packet_list)
             packet_list = add_packets_to_stream()
             total_data_len = [0]
             cycle_count = [0]
             checks()
 
         #run the test several times to better sample test space
-        add_packets_to_stream = lambda: self.add_random_packets_to_stream(
-            self.max_packet_length, self.max_new_packets)
+        add_packets_to_stream = lambda: _add_random_packets_to_stream(
+            self.stream, self.max_packet_length, self.max_new_packets,
+            self.max_rand_val)
 
         for n in range(30):
             packet_list = add_packets_to_stream()
@@ -583,8 +586,9 @@ class TestAxiStreamMasterBFM(TestCase):
         for n in range(5):
             ready_probability = 0.2 * (n + 1)
 
-            packet_list = self.add_random_packets_to_stream(
-                self.max_packet_length, self.max_new_packets)
+            packet_list = _add_random_packets_to_stream(
+                self.stream, self.max_packet_length, self.max_new_packets,
+                self.max_rand_val)
 
             total_data_len = sum(len(each) for each in packet_list)
             cycle_count = [0]
@@ -654,7 +658,7 @@ class TestAxiStreamMasterBFM(TestCase):
                     in range(random.randrange(0, max_packet_length))]) for n 
                     in range(random.randrange(0, max_new_packets))])
 
-            self.add_packets_to_stream(packet_list)
+            _add_packets_to_stream(self.stream, packet_list)
 
             total_data_len = sum(len(each) for each in packet_list)
             cycle_count = [0]
@@ -746,7 +750,7 @@ class TestAxiStreamMasterBFM(TestCase):
                     in range(random.randrange(0, max_packet_length))]) for n 
                     in range(random.randrange(0, max_new_packets))])
 
-            self.add_packets_to_stream(packet_list)
+            _add_packets_to_stream(self.stream, packet_list)
 
             total_data_len = sum(len(each) for each in packet_list)
             cycle_count = [0]
@@ -804,8 +808,9 @@ class TestAxiStreamMasterBFM(TestCase):
 #            return inst, bfm
 #
 #        for n in range(30):
-#            packet_list = self.add_random_packets_to_stream(
-#                self.max_packet_length, self.max_new_packets)
+#            packet_list = _add_random_packets_to_stream(
+#                self.stream, self.max_packet_length, self.max_new_packets,
+#                self.max_rand_val)
 #
 #            total_data_len = sum(len(each) for each in packet_list)
 #            cycle_count = [0]
@@ -814,3 +819,230 @@ class TestAxiStreamMasterBFM(TestCase):
 #                None, None, testbench, self.args, self.arg_types)
 #
 #            self.assertEqual(total_data_len, cycle_count[0])
+
+
+class TestAxiStreamSlaveBFM(TestCase):
+    '''There should be an AXI Stream Bus Functional Model that implements
+    a programmable AXI4 Stream protocol from the slave side.
+    '''
+
+    def setUp(self):
+        
+        self.data_byte_width = 8
+        self.max_packet_length = 20
+        self.max_new_packets = 10
+        self.max_rand_val = 2**(8 * self.data_byte_width)
+
+        self.source_stream = AxiStreamMasterBFM()
+        self.source_test_sink = AxiStreamSlaveBFM()
+
+        self.interface = AxiStreamInterface(self.data_byte_width)
+        clock = Signal(bool(0))
+
+        self.args = {'clock': clock}
+        self.arg_types = {'clock': 'clock'}
+
+    def test_completed_packets_property(self):
+        '''There should be a ``completed_packets`` property that records all
+        the complete packets that have been received.
+
+        This property should not contain not yet completed packets.
+        '''
+        @block
+        def testbench(clock):
+
+            test_sink = self.source_test_sink
+
+            master = self.source_stream.model(clock, self.interface)
+            slave = test_sink.model(clock, self.interface)
+
+            check_packet_next_time = Signal(False)
+            checker_data = {'packets_to_check': 0}
+
+            @always(clock.posedge)
+            def checker():
+
+                if self.interface.TLAST:
+                    check_packet_next_time.next = True
+                    checker_data['packets_to_check'] += 1
+
+                if check_packet_next_time:
+                    packets_to_check = checker_data['packets_to_check']
+                    for ref_packet, test_packet in zip(
+                        trimmed_packet_list[:packets_to_check],
+                        test_sink.completed_packets[:packets_to_check]):
+
+                        self.assertTrue(all(ref == test for ref, test in 
+                                            zip(ref_packet, test_packet)))
+
+
+                    if packets_to_check >= len(trimmed_packet_list):
+                        raise StopSimulation
+
+                if len(trimmed_packet_list) == 0:
+                    # The no data case
+                    raise StopSimulation
+
+
+            return master, slave, checker
+
+        for n in range(30):
+            # lots of test cases
+            
+            # We need new BFMs for every run
+            self.source_stream = AxiStreamMasterBFM()
+            self.source_test_sink = AxiStreamSlaveBFM()
+            
+            packet_list = _add_random_packets_to_stream(
+                self.source_stream, self.max_packet_length, 
+                self.max_new_packets, self.max_rand_val)
+
+            trimmed_packet_list = [
+                packet for packet in packet_list if len(packet) > 0]
+
+            myhdl_cosimulation(
+                None, None, testbench, self.args, self.arg_types)
+
+    def test_TREADY_probability(self):
+        '''There should be a TREADY_probability argument to the model 
+        that dictates the probability of TREADY being True.
+        '''
+        @block
+        def testbench(clock):
+
+            test_sink = self.source_test_sink
+
+            master = self.source_stream.model(clock, self.interface)
+            slave = test_sink.model(
+                clock, self.interface, TREADY_probability=TREADY_probability)
+            
+            check_packet_next_time = Signal(False)
+            checker_data = {'packets_to_check': 0,
+                            'TREADY_False_count': 0}
+
+            @always(clock.posedge)
+            def checker():
+
+                if self.interface.TVALID and self.interface.TREADY:
+                    if self.interface.TLAST:
+                        check_packet_next_time.next = True
+                        checker_data['packets_to_check'] += 1
+
+                if not self.interface.TREADY:
+                    checker_data['TREADY_False_count'] += 1
+
+                if check_packet_next_time:
+                    packets_to_check = checker_data['packets_to_check']
+                    for ref_packet, test_packet in zip(
+                        trimmed_packet_list[:packets_to_check],
+                        test_sink.completed_packets[:packets_to_check]):
+
+                        self.assertTrue(all(ref == test for ref, test in 
+                                            zip(ref_packet, test_packet)))
+
+
+                    if packets_to_check >= len(trimmed_packet_list):
+                        # The chance of this being false should be very very
+                        # low
+                        self.assertTrue(
+                            checker_data['TREADY_False_count'] > 3)
+                        raise StopSimulation
+
+                if len(trimmed_packet_list) == 0:
+                    # The no data case
+                    raise StopSimulation
+
+
+            return master, slave, checker
+
+        for TREADY_percentage_probability in range(10, 90, 10):
+
+            TREADY_probability = TREADY_percentage_probability/100.0
+            # We need new BFMs for every run
+            self.source_stream = AxiStreamMasterBFM()
+            self.source_test_sink = AxiStreamSlaveBFM()
+
+            # Use fixed length packets so it is very likely to be 
+            packet_list = deque(
+                [deque([random.randrange(0, self.max_rand_val) for m 
+                        in range(20)]) for n in range(10)])
+
+            packet_list = _add_packets_to_stream(
+                self.source_stream, packet_list)
+
+            trimmed_packet_list = [
+                packet for packet in packet_list if len(packet) > 0]
+
+            myhdl_cosimulation(
+                None, None, testbench, self.args, self.arg_types)
+
+    
+    def test_current_packet_property(self):
+        '''There should be a ``current_packet`` property that returns the
+        packet that is currently being recorded and has not yet completed.
+        '''
+        @block
+        def testbench(clock):
+
+            test_sink = self.source_test_sink
+
+            master = self.source_stream.model(clock, self.interface)
+            slave = test_sink.model(clock, self.interface)
+
+            check_packet_next_time = Signal(False)
+            checker_data = {
+                'data_in_packet': 0,
+                'current_packet_idx': 0}
+
+            @always(clock.posedge)
+            def checker():
+                if (len(test_sink.completed_packets) == 
+                    len(trimmed_packet_list)):
+                    raise StopSimulation
+
+                if (self.interface.TVALID and self.interface.TREADY 
+                    and not self.interface.TLAST):
+
+                    checker_data['data_in_packet'] += 1
+
+                    expected_length = checker_data['data_in_packet']
+                    packet_length = len(test_sink.current_packet)
+
+                    # depending on whether this has run first or the dut
+                    # has run first, we might be one value difference in
+                    # length
+                    self.assertTrue(
+                        packet_length == expected_length
+                        or packet_length == (expected_length - 1))
+
+                    packet_idx = checker_data['current_packet_idx']
+                    expected_packet = (
+                        trimmed_packet_list[packet_idx][:packet_length])
+
+                    self.assertTrue(
+                        all(ref == test for ref, test in 
+                            zip(expected_packet, test_sink.current_packet)))
+
+                elif self.interface.TLAST:
+                    checker_data['data_in_packet'] = 0
+                    checker_data['current_packet_idx'] += 1
+
+            return master, slave, checker
+
+        for n in range(30):
+            # lots of test cases
+            
+            # We need new BFMs for every run
+            self.source_stream = AxiStreamMasterBFM()
+            self.source_test_sink = AxiStreamSlaveBFM()
+            
+            packet_list = _add_random_packets_to_stream(
+                self.source_stream, self.max_packet_length, 
+                self.max_new_packets, self.max_rand_val)
+
+            trimmed_packet_list = [
+                list(packet) for packet in packet_list if len(packet) > 0]
+
+            myhdl_cosimulation(
+                None, None, testbench, self.args, self.arg_types)
+
