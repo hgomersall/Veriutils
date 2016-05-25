@@ -668,6 +668,75 @@ class TestAxiStreamMasterBFM(TestCase):
 
             self.assertEqual(total_data_len, cycle_count[0])
 
+    def test_None_at_end_of_packets_moves_TLAST(self):
+        '''If one or several Nones are set at the end of a packet, TLAST
+        should be asserted for the last valid value.
+        '''
+        @block
+        def testbench(clock):
+
+            bfm = self.stream.model(clock, self.interface)
+            inst_data = {'first_run': True,
+                         'packet': deque([])}
+
+            @always(clock.posedge)
+            def inst():
+                self.interface.TREADY.next = True
+
+                if inst_data['first_run']:
+                    inst_data['first_run'] = False
+
+                else:
+                    next_expected_val = _get_next_val(packet_list, inst_data)
+                    
+                    if all([each is None for each in inst_data['packet']]):
+                        assert self.interface.TLAST
+
+                    cycle_count[0] += 1
+
+                # Stop if there is nothing left to process
+                if len(inst_data['packet']) == 0:
+                    if (len(packet_list) == 0):
+                        raise StopSimulation
+
+                    elif all(len(each) == 0 for each in packet_list):
+                        raise StopSimulation
+
+            return inst, bfm
+
+        max_packet_length = self.max_packet_length
+        max_new_packets = self.max_new_packets
+
+        def val_gen(data_byte_width):
+            # Generates Nones about half the time probability
+            val = random.randrange(0, 2**(8 * self.data_byte_width))
+            if val > 2**(8 * self.data_byte_width - 1):
+                return None
+            else:
+                return val
+
+        for n in range(30):
+
+            # Use fixed packet lengths
+            packet_list = deque(
+                [deque([
+                    val_gen(self.data_byte_width) for m 
+                    in range(10)]) for n in range(10)])
+            
+            # Add a random number of Nones to the packet (at least 1).
+            for each_packet in packet_list:
+                each_packet.extend([None] * random.randrange(1, 5))
+
+            _add_packets_to_stream(self.stream, packet_list)
+
+            total_data_len = sum(len(each) for each in packet_list)
+            cycle_count = [0]
+
+            myhdl_cosimulation(
+                None, None, testbench, self.args, self.arg_types)
+
+            self.assertEqual(total_data_len, cycle_count[0])
+
     def test_None_in_packets_for_one_cycle_only(self):
         '''If the data was ``None``, corresponding to setting 
         ``TVALID = False``, it should always only last for a single clock
@@ -1046,3 +1115,56 @@ class TestAxiStreamSlaveBFM(TestCase):
             myhdl_cosimulation(
                 None, None, testbench, self.args, self.arg_types)
 
+    def test_TVALID_low_not_recorded(self):
+        '''If TVALID is unset on the master interface the values on the line
+        should not be recorded.
+        '''
+        @block
+        def testbench(clock):
+
+            test_sink = self.source_test_sink
+
+            master = self.source_stream.model(clock, self.interface)
+            slave = test_sink.model(
+                clock, self.interface, TREADY_probability=TREADY_probability)
+            
+            @always(clock.posedge)
+            def stopper():
+
+                if len(test_sink.completed_packets) == len(packet_list):
+                    raise StopSimulation
+            
+            return master, slave, stopper
+
+        for TREADY_percentage_probability in (90,):#range(10, 90, 10):
+
+            TREADY_probability = TREADY_percentage_probability/100.0
+            # We need new BFMs for every run
+            self.source_stream = AxiStreamMasterBFM()
+            self.source_test_sink = AxiStreamSlaveBFM()
+
+            packet_list = deque([])
+            trimmed_packet_list = []
+            for n in range(10):
+                packet = deque([])
+                trimmed_packet = []
+                for m in range(20):
+                    val = random.randrange(0, self.max_rand_val * 2)
+                    if val > self.max_rand_val:
+                        val = None
+
+                    else:
+                        trimmed_packet.append(val)
+
+                    packet.append(val)
+
+                packet_list.append(packet)
+                trimmed_packet_list.append(trimmed_packet)
+
+            _add_packets_to_stream(self.source_stream, packet_list)
+
+            myhdl_cosimulation(
+                None, None, testbench, self.args, self.arg_types)
+
+            self.assertEqual(
+                trimmed_packet_list, self.source_test_sink.completed_packets)

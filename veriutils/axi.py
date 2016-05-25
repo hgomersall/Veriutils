@@ -163,6 +163,7 @@ class AxiStreamMasterBFM(object):
                 if len(model_rundata['packet']) > 0:
 
                     if len(model_rundata['packet']) == 1:
+
                         interface.TLAST.next = True
                         value = model_rundata['packet'].popleft()
 
@@ -170,8 +171,15 @@ class AxiStreamMasterBFM(object):
                         del model_rundata['packet']
 
                     else:
-                        interface.TLAST.next = False
                         value = model_rundata['packet'].popleft()
+
+                        # We need to set TLAST if all the remaining values
+                        # in the packet are None
+                        if all(
+                            [val is None for val in model_rundata['packet']]):
+                            interface.TLAST.next = True
+                        else:
+                            interface.TLAST.next = False
 
                     if value is not None:
                         None_data.next = False
