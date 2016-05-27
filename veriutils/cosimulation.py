@@ -225,8 +225,9 @@ def _types_from_signal_hierarchy(hierarchy, types):
                         (name, _types_from_signal_hierarchy(
                             next_hierarchy, types[name])))
                 except KeyError:
-                    # This signal is not in the type dict, so we ignore it.
-                    pass
+                    # This signal is not in the type dict, so we set it
+                    # to None so it can be removed later
+                    _types.append((name, None))
 
     return _types
 
@@ -281,6 +282,7 @@ def _create_flattened_args(args, arg_types):
 
         hierarchy_types = _types_from_signal_hierarchy(
             attribute_name_list, arg_types[each_signal_name])
+
         if len(_signal_list) == 1 and len(attribute_name_list) == 0:
             flattened_args[each_signal_name] = _signal_list[0]
             flattened_arg_types[each_signal_name] = (
@@ -327,6 +329,10 @@ def _create_flattened_args(args, arg_types):
             # interface hierarchy
             for each_sub_signal, each_interface_lookup, each_type in zip(
                 _signal_list, attribute_name_list, hierarchy_types):
+
+                if each_type[1] is None:
+                    # Not assigned a type, so we have to ignore it.
+                    continue
 
                 # Get a unique signal name
                 # Try the obvious name first

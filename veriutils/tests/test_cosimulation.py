@@ -602,6 +602,7 @@ class CosimulationTestMixin(object):
         for signal in dut_results:
             self.assertEqual(dut_results[signal], ref_results[signal])
 
+
     def test_interface_with_non_signal_attribute(self):
         '''It should be possible to work with interfaces that contain an 
         attribute that is not a Signal.'''
@@ -695,6 +696,8 @@ class CosimulationTestMixin(object):
             def __init__(self):
                 self.unused_sig = Signal(intbv(0)[10:])
                 self.sig = Signal(intbv(0, min=min_val, max=max_val))
+
+                assert self.__dict__.keys()[0] != 'sig'
 
         @block
         def identity_factory(test_input, test_output, reset, clock):
