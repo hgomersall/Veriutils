@@ -680,6 +680,48 @@ class CosimulationTestMixin(object):
         for signal in dut_results:
             self.assertEqual(dut_results[signal], ref_results[signal])
 
+    def test_unused_signal_in_interface(self):
+        '''It should be possible to work with interfaces that contain a
+        Signal that is not declared in the arg types, in which case it is
+        simply ignored.'''
+
+        args = self.default_args.copy()
+        arg_types = self.default_arg_types.copy()
+
+        min_val = -1000
+        max_val = 1000
+
+        class Interface(object):
+            def __init__(self):
+                self.unused_sig = Signal(intbv(0)[10:])
+                self.sig = Signal(intbv(0, min=min_val, max=max_val))
+
+        @block
+        def identity_factory(test_input, test_output, reset, clock):
+            @always_seq(clock.posedge, reset=reset)
+            def identity():
+                if __debug__:
+                    self.sim_checker(copy.copy(test_input.sig.val))
+
+                test_output.sig.next = test_input.sig
+
+            return identity            
+
+        args['test_input'] = Interface()
+        args['test_output'] = Interface()
+
+        arg_types['test_output'] = {'sig': 'output'}
+        arg_types['test_input'] = {'sig': 'random'}
+
+        sim_cycles = 31
+
+        dut_results, ref_results = self.construct_simulate_and_munge(
+            sim_cycles, identity_factory, identity_factory, 
+            args, arg_types)
+
+        for signal in dut_results:
+            self.assertEqual(dut_results[signal], ref_results[signal])
+
     def test_signal_list_arg(self):
         '''It should be possible to work with lists of signals.
 

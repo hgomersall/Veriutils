@@ -220,9 +220,13 @@ def _types_from_signal_hierarchy(hierarchy, types):
                     next_hierarchy, types)))
             
             else:
-                _types.append(
-                    (name, _types_from_signal_hierarchy(
-                        next_hierarchy, types[name])))
+                try:
+                    _types.append(
+                        (name, _types_from_signal_hierarchy(
+                            next_hierarchy, types[name])))
+                except KeyError:
+                    # This signal is not in the type dict, so we ignore it.
+                    pass
 
     return _types
 
