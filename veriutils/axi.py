@@ -23,7 +23,7 @@ class AxiStreamInterface(object):
         return self._TUSER_width
 
     def __init__(self, bus_width=4, TID_width=None, TDEST_width=None, 
-                 TUSER_width=None):
+                 TUSER_width=None, TVALID_init=False, TREADY_init=False):
         '''Creates an AXI4 Stream interface object. The signals and parameters
         are exactly as described in the AMBA 4 AXI4 Stream Protocol
         Specification.
@@ -57,11 +57,15 @@ class AxiStreamInterface(object):
         None of the recommendations are enforced in the interface and can
         be implemented differently. There may be additional constraints on the
         size of the interfaces that need to be considered.
+
+        Initial values of TVALID and TREADY can be set with the TVALID_init
+        and TREADY_init arguments respectively. In both cases the argument
+        is coerced to be a boolean type.
         '''
         self._bus_width = int(bus_width)
 
-        self.TVALID = Signal(bool(0))
-        self.TREADY = Signal(bool(0))        
+        self.TVALID = Signal(bool(TVALID_init))
+        self.TREADY = Signal(bool(TREADY_init))        
         self.TDATA = Signal(intbv(0)[8*self.bus_width:])
         self.TSTRB = Signal(intbv(0)[self.bus_width:])
         self.TKEEP = Signal(intbv(0)[self.bus_width:]) 

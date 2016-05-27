@@ -12,7 +12,6 @@ class TestAxiStreamInterface(TestCase):
     '''There should be an AXI4 Stream object that encapsulates all the AXI
     stream signals.
     '''
-
     def test_bus_width_property(self):
         '''There should be a bus width property which is an integer set
         by the first position ``bus_width`` keyword argument, defaulting to 4.
@@ -185,6 +184,38 @@ class TestAxiStreamInterface(TestCase):
         self.assertTrue(isinstance(interface.TUSER, myhdl._Signal._Signal))
         self.assertTrue(isinstance(interface.TUSER._val, intbv))
         self.assertEqual(len(interface.TUSER._val), interface.TUSER_width)
+
+    def test_TVALID_init(self):
+        '''It should be possible to set an initial value for TVALID through
+        an __init__ argument, TVALID_init.
+        '''
+        interface = AxiStreamInterface()
+        self.assertEqual(interface.TVALID, 0)
+
+        interface = AxiStreamInterface(TVALID_init=True)
+        self.assertEqual(interface.TVALID, 1)
+        
+        interface = AxiStreamInterface(TVALID_init=1)
+        self.assertEqual(interface.TVALID, 1)
+        
+        interface = AxiStreamInterface(TVALID_init=False)
+        self.assertEqual(interface.TVALID, 0)
+
+    def test_TREADY_init(self):
+        '''It should be possible to set an initial value for TREADY through
+        an __init__ argument, TREADY_init.
+        '''
+        interface = AxiStreamInterface()
+        self.assertEqual(interface.TREADY, 0)
+
+        interface = AxiStreamInterface(TREADY_init=True)
+        self.assertEqual(interface.TREADY, 1)
+        
+        interface = AxiStreamInterface(TREADY_init=1)
+        self.assertEqual(interface.TREADY, 1)
+        
+        interface = AxiStreamInterface(TREADY_init=False)
+        self.assertEqual(interface.TREADY, 0)
 
 def _get_next_val(packet_list, instance_data):
 
