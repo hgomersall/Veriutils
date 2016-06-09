@@ -1,7 +1,7 @@
 from .hdl_blocks import *
 from . import VIVADO_EXECUTABLE
 
-from myhdl import * 
+from myhdl import *
 
 import myhdl
 from myhdl.conversion._toVHDL import _shortversion
@@ -42,14 +42,14 @@ def file_writer(filename, signal_list, clock, signal_names=None):
 
     vhdl_signal_str_write_list = []
     vhdl_name_str_write_list = []
-    
+
     verilog_signal_str_write_list = []
     verilog_name_str_write_list = []
 
     for n, each_signal in enumerate(signal_list):
         locals()['signal_' + str(n)] = each_signal
         locals()['signal_' + str(n)].read = True
-        
+
         if signal_names is None:
             vhdl_name_str_write_list.append(
                 'write(output_line, string\'(\"$signal_%d\"));' % n)
@@ -72,35 +72,35 @@ def file_writer(filename, signal_list, clock, signal_names=None):
 
         verilog_signal_str_write_list.append(
             '$$fwrite(output_file, \"%%b\", $signal_%d);' % n)
-    
+
     vhdl_name_indent = ' ' * 12
     vhdl_name_str_write = (
-        ('\n%swrite(output_line, string\'(\",\"));\n%s' % 
+        ('\n%swrite(output_line, string\'(\",\"));\n%s' %
          (vhdl_name_indent, vhdl_name_indent))
         .join(vhdl_name_str_write_list))
 
     verilog_name_indent = ' ' * 4
     verilog_name_str_write = (
-        ('\n%s$$fwrite(output_file, \",\");\n%s' % 
+        ('\n%s$$fwrite(output_file, \",\");\n%s' %
          (verilog_name_indent, verilog_name_indent))
         .join(verilog_name_str_write_list))
 
     vhdl_signal_indent = ' ' * 8
     vhdl_signal_str_write = (
-        ('\n%swrite(output_line, string\'(\",\"));\n%s' % 
+        ('\n%swrite(output_line, string\'(\",\"));\n%s' %
          (vhdl_signal_indent, vhdl_signal_indent))
         .join(vhdl_signal_str_write_list))
 
     verilog_signal_indent = ' ' * 12
     verilog_signal_str_write = (
-        ('\n%s$$fwrite(output_file, \",\");\n%s' % 
+        ('\n%s$$fwrite(output_file, \",\");\n%s' %
          (verilog_signal_indent, verilog_signal_indent))
         .join(verilog_signal_str_write_list))
 
     file_writer.verilog_code = '''
 initial begin: write_to_file
     integer output_file;
-    
+
     output_file = $$fopen("%s", "w");
 
     %s
@@ -148,12 +148,12 @@ end process write_to_file;
 
 def _expand_to_signal_list(signal_obj, depth=0):
     '''Takes a signal object - either a signal or an interface, and returns
-    a list of all the signals therein contained, along with a corresponding 
+    a list of all the signals therein contained, along with a corresponding
     list of attribute names. If signal_obj is a signal, then the attribute
     name list is empty. Each value in the attribute name list is one more
     layer down in the interface hierarchy.
-    
-    Supports one level of interface - it would be easy to extend, but the 
+
+    Supports one level of interface - it would be easy to extend, but the
     functionality is not currently desired or tested.
     '''
     if depth > 1:
@@ -183,7 +183,7 @@ def _expand_to_signal_list(signal_obj, depth=0):
 
                 signal_list += each_signal_list
                 attribute_name_list += [(each, each_attr_name_list)]
-                
+
         except AttributeError as e:
             # A non-signal, non-interface
             return [], []
@@ -191,7 +191,7 @@ def _expand_to_signal_list(signal_obj, depth=0):
         return signal_list, attribute_name_list
 
 def _turn_signal_hierarchy_into_name(hierarchy):
-    '''A function that recurses through the signal 
+    '''A function that recurses through the signal
     hierachy and generates a name from it, putting a dot between
     each level in the hierarchy.
     '''
@@ -201,7 +201,7 @@ def _turn_signal_hierarchy_into_name(hierarchy):
         return this_level_name
 
     else:
-        return (this_level_name + '.' + 
+        return (this_level_name + '.' +
                 _turn_signal_hierarchy_into_name(next_hierarchy))
 
 def _types_from_signal_hierarchy(hierarchy, types):
@@ -218,7 +218,7 @@ def _types_from_signal_hierarchy(hierarchy, types):
             if isinstance(types, string_type):
                 _types.append((name, _types_from_signal_hierarchy(
                     next_hierarchy, types)))
-            
+
             else:
                 try:
                     _types.append(
@@ -233,35 +233,35 @@ def _types_from_signal_hierarchy(hierarchy, types):
 
 @block
 def single_signal_assigner(input_signal, output_signal):
-    
+
     @always_comb
     def single_assignment():
         output_signal.next = input_signal
-        
+
     return single_assignment
 
 @block
 def deinterfacer(interface, assignment_dict):
-    
+
     assigner_blocks = []
     for attr_name in assignment_dict:
         locals()['input_' + attr_name] = getattr(interface, attr_name)
         locals()['output_' + attr_name] = assignment_dict[attr_name]
-        
-        if isinstance(locals()['input_' + attr_name], 
+
+        if isinstance(locals()['input_' + attr_name],
                       myhdl._Signal._Signal):
-            
+
             assigner_blocks.append(
                 single_signal_assigner(
                     locals()['input_' + attr_name],
                     locals()['output_' + attr_name]))
-    
+
     return assigner_blocks
 
 def _create_flattened_args(args, arg_types):
     # Turn all the interfaces into just another signal in the list
 
-    arg_list = sorted(args.keys())    
+    arg_list = sorted(args.keys())
     non_signal_list = []
     flattened_args = {}
     flattened_arg_types = {}
@@ -297,14 +297,14 @@ def _create_flattened_args(args, arg_types):
                 if not isinstance(each_signal, myhdl._Signal._Signal):
                     # ignore non signals
                     continue
-                
+
                 # Get a unique signal name
                 while True:
                     sub_signal_name = each_signal_name + str(name_idx)
-                    name_idx += 1                        
+                    name_idx += 1
                     if sub_signal_name not in arg_list:
                         break
-                    
+
                 flattened_args[sub_signal_name] = each_signal
                 flattened_arg_types[sub_signal_name] = (
                     arg_types[each_signal_name])
@@ -345,9 +345,9 @@ def _create_flattened_args(args, arg_types):
 
                     else:
                         sub_signal_name = (
-                            interface_name + '_' + each_interface_lookup[0] + 
+                            interface_name + '_' + each_interface_lookup[0] +
                             str(subname_idx))
-                        subname_idx += 1                        
+                        subname_idx += 1
 
                 flattened_args[sub_signal_name] = each_sub_signal
                 # As we said above, we only support one level of
@@ -360,13 +360,13 @@ def _create_flattened_args(args, arg_types):
                     each_signal_name, each_interface_lookup)
                 lookup_type[sub_signal_name] = 'interface'
 
-    return (non_signal_list, flattened_args, flattened_arg_types, 
+    return (non_signal_list, flattened_args, flattened_arg_types,
             signal_object_lookup, lookup_type)
 
 
 class SynchronousTest(object):
 
-    def __init__(self, dut_factory, ref_factory, args, arg_types, 
+    def __init__(self, dut_factory, ref_factory, args, arg_types,
                  period=PERIOD, custom_sources=None):
         '''Construct a synchronous test case for the pair of factories
         given by `dut_factory` and `ref_factory`. Each factory is constructed
@@ -375,7 +375,7 @@ class SynchronousTest(object):
         if `dut_factory` is None, then it is simply not used
 
         arg_types specifies how each arg should be handled. It is a dict to
-        a valid type string. The supported type strings are: 
+        a valid type string. The supported type strings are:
             * `'clock'`
             * `'init_reset'`
             * `'random'`
@@ -384,46 +384,46 @@ class SynchronousTest(object):
             * `'custom_reset'`
             * `'non-signal'`
 
-        * The `'clock'` arg is auto-connected to a clock generator. There 
+        * The `'clock'` arg is auto-connected to a clock generator. There
         should be one and only one clock object.
         * `'init_reset'` should be a reset signal, and is auto-connected to
-        a reset generator that drives active for a few cycles, then goes 
+        a reset generator that drives active for a few cycles, then goes
         inactive. That is, it resets at initialization.
-        * A `'random'` arg is a signal that is auto-connected to a random 
+        * A `'random'` arg is a signal that is auto-connected to a random
         number generator. This can be any type of signal.
-        * `'output'` args are simply recorded, but are duplicated for the 
-        dut_factory. This means the dut_factory and the ref_factory can 
+        * `'output'` args are simply recorded, but are duplicated for the
+        dut_factory. This means the dut_factory and the ref_factory can
         output different values. Note, this also means that if a custom_source
-        takes an output as one of its signals, it is the output that 
+        takes an output as one of its signals, it is the output that
         corresponds to that being driven by the instance from `ref_factory`
         (i.e. the reference).
-        * A `'custom'` arg is assumed to be handled elsewhere (say, as a 
+        * A `'custom'` arg is assumed to be handled elsewhere (say, as a
         constant or handled through a custom_source).
         * `'custom_reset'` is like a `'custom'` arg, but for reset signals.
         * `'non-signal'` denotes an argument that is not a signal or an
         interface (i.e. an argument that is used during construction only).
 
         If an argument is an interface type, then a dict of the above can be
-        used. That is, each attribute in the interface can be a key in a 
+        used. That is, each attribute in the interface can be a key in a
         dict that points to a string from the above list.
 
         ``period`` sets the clock period.
 
-        ``custom_sources`` is a list of tuples as 
-        ``(myhdl_block, *args, **kwargs)``, which is instantiated at 
+        ``custom_sources`` is a list of tuples as
+        ``(myhdl_block, *args, **kwargs)``, which is instantiated at
         simulation or conversion time. ``args`` and ``kwargs`` correspond
         to the arguments and keyword arguments needed to instantiate each
         custom source. ``myhdl_block`` should be a callable block object.
-        
+
         Any sources that are needed to support the `'custom'` or
         `'custom_reset'` args should be included in this list.
         '''
 
-        valid_arg_types = ('clock', 'init_reset', 'random', 'output', 
+        valid_arg_types = ('clock', 'init_reset', 'random', 'output',
                            'custom', 'custom_reset', 'non-signal')
 
         self.period = PERIOD
-        
+
         self.dut_factory = dut_factory
         self.ref_factory = ref_factory
 
@@ -447,9 +447,9 @@ class SynchronousTest(object):
                 if (isinstance(signal_objs[name], myhdl._Signal._Signal) and
                     types[name] not in valid_arg_types):
 
-                    raise ValueError('Invalid argument or argument types:' 
+                    raise ValueError('Invalid argument or argument types:'
                                      ' All the signals in the hierarchy '
-                                     'should be one of type: %s' % 
+                                     'should be one of type: %s' %
                                      (', '.join(valid_arg_types),))
 
                 elif not isinstance(signal_objs[name], myhdl._Signal._Signal):
@@ -461,7 +461,7 @@ class SynchronousTest(object):
 
                     elif types[name] in valid_arg_types:
 
-                        # This is ok (we can assign a hierarchy to be of 
+                        # This is ok (we can assign a hierarchy to be of
                         # one type
                         flattened_types.append(types[name])
                         flattened_signals.append(signal_objs[name])
@@ -474,7 +474,7 @@ class SynchronousTest(object):
                                            'non-existant signal')
 
                 else:
-                    
+
                     flattened_types.append(types[name])
                     flattened_signals.append(signal_objs[name])
 
@@ -488,7 +488,7 @@ class SynchronousTest(object):
             raise ValueError('Multiple clocks: There should be one and only '
                              'one clock in the argument list.')
 
-        if (flattened_types.count('init_reset') + 
+        if (flattened_types.count('init_reset') +
             flattened_types.count('custom_reset') > 1):
 
             raise ValueError('Multiple resets: There should be one and only '
@@ -522,11 +522,22 @@ class SynchronousTest(object):
         # Create the random sources.
         self.random_source_factories = [
             (random_source, (each_signal, self.clock, self.reset), {})
-            for each_signal, each_type in 
+            for each_signal, each_type in
             zip(flattened_signals, flattened_types) if each_type == 'random']
 
         if custom_sources is None:
             custom_sources = []
+
+        else:
+            for n, each_custom_source in enumerate(custom_sources):
+                malformed_custom_source = False
+
+                if (not isinstance(each_custom_source[1], (tuple, list))
+                    or not isinstance(each_custom_source[2], dict)):
+
+                    raise ValueError(
+                        'Malformed custom source: custom source %d. It '
+                        'should be (block, arg_list, kwargs_dict)' % (n,))
 
         self.custom_sources = custom_sources
 
@@ -551,8 +562,8 @@ class SynchronousTest(object):
                         # Special case signal lists
                         # Only copy the signals
                         output_dict[name] = [
-                            copy_signal(each) if 
-                            isinstance(each, myhdl._Signal._Signal) else 
+                            copy_signal(each) if
+                            isinstance(each, myhdl._Signal._Signal) else
                             each for each in signal_dict[name]]
                     else:
                         output_dict[name] = copy_signal(signal_dict[name])
@@ -605,7 +616,7 @@ class SynchronousTest(object):
             if dut_factory is not None:
                 dut_arg_output = []
                 dut_recorder = (
-                    recorder_sink, (dut_signal, self.clock, dut_arg_output), 
+                    recorder_sink, (dut_signal, self.clock, dut_arg_output),
                     {})
 
                 dut_outputs[signal] = dut_arg_output
@@ -616,7 +627,7 @@ class SynchronousTest(object):
                 recorder_sink, (ref_signal, self.clock, ref_arg_output), {})
             ref_outputs[signal] = ref_arg_output
             self.output_recorder_factories.append(ref_recorder)
-            
+
 
         self.test_factories = [(ref_factory, (), self.ref_args)]
 
@@ -637,18 +648,18 @@ class SynchronousTest(object):
         '''Co-simulate the device under test and the reference design.
 
         Return a pair tuple of lists, each corresponding to the recorded
-        signals (in the order they were passed) of respectively the 
+        signals (in the order they were passed) of respectively the
         device under test and the reference design.
 
-        if ``cycles`` is None, then the simulation continues until 
+        if ``cycles`` is None, then the simulation continues until
         StopSimulation is raised.
 
-        If vcd_name is not None, a vcd file will be created of the 
+        If vcd_name is not None, a vcd file will be created of the
         '''
 
         # We initially need to clear all the signals to bring them to
         # a defined initial state.
-        (non_signal_list, flattened_args, 
+        (non_signal_list, flattened_args,
          flattened_arg_types, _, _)= (
              _create_flattened_args(self.args, self.arg_types))
 
@@ -666,7 +677,7 @@ class SynchronousTest(object):
 
         def tb_wrapper():
 
-            (non_signal_list, flattened_ref_args, 
+            (non_signal_list, flattened_ref_args,
              flattened_arg_types, _, _)= (
                  _create_flattened_args(self.args, self.arg_types))
 
@@ -681,10 +692,10 @@ class SynchronousTest(object):
                             continue
 
                         signal_dict[name + str(n)] = each_signal
-                
+
                 else:
                     signal_dict[name] = signal_obj
-                    
+
             for each_signal_obj in flattened_args:
 
                 if flattened_arg_types[each_signal_obj] is 'output':
@@ -695,15 +706,15 @@ class SynchronousTest(object):
 
             locals().update(signal_dict)
 
-            return tuple(self.random_sources + self.output_recorders + 
-                         self.test_instances + self.custom_sources + 
+            return tuple(self.random_sources + self.output_recorders +
+                         self.test_instances + self.custom_sources +
                          [self.clockgen, self.init_reset])
 
 
         @block
         def top():
             random_sources = [
-                factory(*args, **kwargs) for factory, args, kwargs in 
+                factory(*args, **kwargs) for factory, args, kwargs in
                 self.random_source_factories]
             output_recorders = [
                 factory(*args, **kwargs) for factory, args, kwargs in
@@ -712,12 +723,12 @@ class SynchronousTest(object):
             test_instances = []
             for name, (factory, args, kwargs) in zip(
                 ('ref', 'dut'), self.test_factories):
-                
+
                 try:
                     test_instances.append(factory(*args, **kwargs))
                 except myhdl.BlockError as e:
                     raise myhdl.BlockError(
-                        'The %s factory returned an invalid object: %s' % 
+                        'The %s factory returned an invalid object: %s' %
                         (name, e))
 
             custom_sources = [
@@ -733,7 +744,7 @@ class SynchronousTest(object):
             except IndexError:
                 init_reset = []
 
-            return [random_sources, output_recorders, test_instances, 
+            return [random_sources, output_recorders, test_instances,
                     custom_sources, [clockgen, init_reset]]
 
         top_level_block = top()
@@ -743,7 +754,7 @@ class SynchronousTest(object):
             trace = True
         else:
             trace = False
-        
+
         top_level_block.config_sim(trace=trace)
 
         if cycles is not None:
@@ -758,15 +769,15 @@ class SynchronousTest(object):
 
     @block
     def dut_convertible_top(self, signal_output_file):
-        '''Acts as a top-level MyHDL method, implementing a portable, 
-        convertible version of the SynchronousTest object wrapping the 
+        '''Acts as a top-level MyHDL method, implementing a portable,
+        convertible version of the SynchronousTest object wrapping the
         device under test.
 
         The test vector that serves as the stimulus to all the inputs (except
         the clock) is generated by calls to the :meth:`cosimulate` method.
         :meth:`cosimulate` should be run for at least as many cycles as is
         the simulation of :meth:`dut_convertible_top`. If
-        cosimulate is run for fewer cycles than :meth:`dut_convertible_top`, 
+        cosimulate is run for fewer cycles than :meth:`dut_convertible_top`,
         the result is undefined.
         '''
         if not self._simulator_run:
@@ -782,7 +793,7 @@ class SynchronousTest(object):
         reset = self.reset
         ref_outputs = self.outputs[1]
 
-        (non_signal_list, flattened_args, 
+        (non_signal_list, flattened_args,
          flattened_arg_types, signal_object_lookup, lookup_type) = (
              _create_flattened_args(self.args, self.arg_types))
 
@@ -793,7 +804,7 @@ class SynchronousTest(object):
         def _extract_recorded_sample(recording_sample, hierarchy):
             '''A function that recurses through the a sample recording to
             extract the correct one. It takes as its input a sample recording
-            (i.e. the recording at one time instant), and the signal 
+            (i.e. the recording at one time instant), and the signal
             hierachy in the form returned from _expand_to_signal_list.
             '''
             this_level_name, next_hierarchy = hierarchy
@@ -807,7 +818,7 @@ class SynchronousTest(object):
 
         for each_signal_name in flattened_args:
 
-            if isinstance(flattened_args[each_signal_name].val, 
+            if isinstance(flattened_args[each_signal_name].val,
                           EnumItemType):
                 # enums are currently unsupported here
                 raise ValueError('enum signals are currently unsupported')
@@ -820,7 +831,7 @@ class SynchronousTest(object):
             elif lookup_type[each_signal_name] == 'signal_list':
                 # a signal list
 
-                # Get the output list and the idx for this particular 
+                # Get the output list and the idx for this particular
                 # flattened signal
                 arg_sig_list = (
                     ref_outputs[signal_object_lookup[each_signal_name][0]])
@@ -858,7 +869,7 @@ class SynchronousTest(object):
                 flattened_dut_args[each_signal_name] = clock
 
             elif flattened_arg_types[each_signal_name] == 'init_reset':
-                # This should be played back                
+                # This should be played back
                 drive_list = tuple(flattened_ref_outputs[each_signal_name])
                 instances.append(lut_signal_driver(reset, drive_list, clock))
                 flattened_dut_args[each_signal_name] = reset
@@ -873,7 +884,7 @@ class SynchronousTest(object):
                     locals()[each_signal_name])
 
             elif flattened_arg_types[each_signal_name] == 'custom_reset':
-                # This should be played back                
+                # This should be played back
                 drive_list = tuple(flattened_ref_outputs[each_signal_name])
                 instances.append(lut_signal_driver(reset, drive_list, clock))
                 flattened_dut_args[each_signal_name] = reset
@@ -893,7 +904,7 @@ class SynchronousTest(object):
         # the MyHDL conversion fails to identify the interface signals that
         # are used (perhaps due to the v*_code attribute in the file writer?).
         # It converts, but the signals are not declared.
-        # The following assigns each interface signal to an individual 
+        # The following assigns each interface signal to an individual
         # written signal. This seems to convert properly, but it's a bit
         # of a hack.
         # Basically, everything should work by simply deleting here up to END
@@ -901,14 +912,14 @@ class SynchronousTest(object):
         interface_mapping = {}
         for each_signal_name in recorded_local_name_list:
             if each_signal_name in signal_object_lookup:
-                
+
                 if lookup_type[each_signal_name] == 'interface':
                     interface_name, hierarchy = (
                         signal_object_lookup[each_signal_name])
                     # FIXME We only support one level
                     signal_attr_name = hierarchy[0]
 
-                    # We need to copy the signal so we only drive the 
+                    # We need to copy the signal so we only drive the
                     # interface from one place.
                     copied_signal = copy_signal(locals()[each_signal_name])
                     locals()[each_signal_name] = copied_signal
@@ -959,7 +970,7 @@ class SynchronousTest(object):
                 signal_hierarchy = signal_object_lookup[each_signal_name]
                 recorded_list_names.append(
                     'interface %s %s' % (
-                        type_str, 
+                        type_str,
                         _turn_signal_hierarchy_into_name(signal_hierarchy)))
 
         # Setup the output writer and add it to the instances list
@@ -998,18 +1009,18 @@ class SynchronousTest(object):
 
         return instances
 
-def myhdl_cosimulation(cycles, dut_factory, ref_factory, args, arg_types, 
+def myhdl_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
                        period=PERIOD, custom_sources=None, vcd_name=None):
-    '''Run a cosimulation of a pair of MyHDL instances. This is a thin 
-    wrapper around a :class:`SynchronousTest` object, in which the object 
+    '''Run a cosimulation of a pair of MyHDL instances. This is a thin
+    wrapper around a :class:`SynchronousTest` object, in which the object
     is created and then the cosimulate method is run, with the ``cycles``
     argument. See the documentation for :class:`SynchronousTest` for the
     definition of all the arguments except ``cycles``.
 
-    What is returned is what is returned from 
+    What is returned is what is returned from
     :meth:`SynchronousTest.cosimulate`.
     '''
-    sim_object = SynchronousTest(dut_factory, ref_factory, args, arg_types, 
+    sim_object = SynchronousTest(dut_factory, ref_factory, args, arg_types,
                                  period, custom_sources)
 
     return sim_object.cosimulate(cycles, vcd_name=vcd_name)
