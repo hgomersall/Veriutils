@@ -7,6 +7,10 @@ import myhdl
 from collections import deque
 import random
 
+import os
+import tempfile
+import shutil
+
 
 class TestAxiStreamInterface(TestCase):
     '''There should be an AXI4 Stream object that encapsulates all the AXI
@@ -41,31 +45,39 @@ class TestAxiStreamInterface(TestCase):
         self.assertEqual(len(interface.TDATA._val), interface.bus_width*8)
 
     def test_TSTRB(self):
-        '''There should be a TSTRB attribute that is an unsigned intbv Signal
-        that is bus_width bits wide and is full range.
+        '''There should be an optional TSTRB attribute that is an unsigned
+        intbv Signal that is bus_width bits wide and is full range.
         '''
+        # The default case is not to include it
         interface = AxiStreamInterface()
+        self.assertFalse(hasattr(interface, 'TSTRB'))
+
+        interface = AxiStreamInterface(use_TSTRB=True)
         self.assertTrue(isinstance(interface.TSTRB, myhdl._Signal._Signal))
         self.assertTrue(isinstance(interface.TSTRB._val, intbv))
         self.assertEqual(len(interface.TSTRB._val), interface.bus_width)
         self.assertEqual(interface.TSTRB.min, 0)
         self.assertEqual(interface.TSTRB.max, 2**(interface.bus_width))
 
-        interface = AxiStreamInterface(bus_width='6')
+        interface = AxiStreamInterface(bus_width='6', use_TSTRB=True)
         self.assertEqual(len(interface.TSTRB._val), interface.bus_width)
 
     def test_TKEEP(self):
-        '''There should be a TKEEP attribute that is an unsigned intbv Signal
-        that is bus_width bits wide and is full range.
+        '''There should be an optional TKEEP attribute that is an unsigned
+        intbv Signal that is bus_width bits wide and is full range.
         '''
+        # The default case is not to include it
         interface = AxiStreamInterface()
+        self.assertFalse(hasattr(interface, 'TKEEP'))
+
+        interface = AxiStreamInterface(use_TKEEP=True)
         self.assertTrue(isinstance(interface.TKEEP, myhdl._Signal._Signal))
         self.assertTrue(isinstance(interface.TKEEP._val, intbv))
         self.assertEqual(len(interface.TKEEP._val), interface.bus_width)
         self.assertEqual(interface.TKEEP.min, 0)
         self.assertEqual(interface.TKEEP.max, 2**(interface.bus_width))
 
-        interface = AxiStreamInterface(bus_width=8)
+        interface = AxiStreamInterface(bus_width=8, use_TKEEP=True)
         self.assertEqual(len(interface.TKEEP._val), interface.bus_width)
 
     def test_TVALID(self):
@@ -93,7 +105,7 @@ class TestAxiStreamInterface(TestCase):
         self.assertEqual(len(interface.TLAST), 1)
 
     def test_TID_width_property(self):
-        '''There should be a TID_width property which is set by the 
+        '''There should be a TID_width property which is set by the
         ``TID_width`` keyword argument, the default of which is ``None``.
         '''
         interface = AxiStreamInterface()
@@ -106,14 +118,14 @@ class TestAxiStreamInterface(TestCase):
         self.assertEqual(interface.TID_width, 6)
 
     def test_TID(self):
-        '''There should be an optional TID attribute that is an intbv Signal 
-        of width set by the ``TID_width`` argument. If ``TID_width`` is 
+        '''There should be an optional TID attribute that is an intbv Signal
+        of width set by the ``TID_width`` argument. If ``TID_width`` is
         ``None`` or not set then the attribute should not exist.
         '''
         interface = AxiStreamInterface()
         with self.assertRaises(AttributeError):
             interface.TID
-        
+
         interface = AxiStreamInterface(TID_width=None)
         with self.assertRaises(AttributeError):
             interface.TID
@@ -124,7 +136,7 @@ class TestAxiStreamInterface(TestCase):
         self.assertEqual(len(interface.TID._val), interface.TID_width)
 
     def test_TDEST_width_property(self):
-        '''There should be a TDEST_width property which is set by the 
+        '''There should be a TDEST_width property which is set by the
         ``TDEST_width`` keyword argument, the default of which is ``None``.
         '''
         interface = AxiStreamInterface()
@@ -137,14 +149,14 @@ class TestAxiStreamInterface(TestCase):
         self.assertEqual(interface.TDEST_width, 6)
 
     def test_TDEST(self):
-        '''There should be an optional TDEST attribute that is an intbv Signal 
-        of width set by the ``TDEST_width`` argument. If ``TDEST_width`` is 
+        '''There should be an optional TDEST attribute that is an intbv Signal
+        of width set by the ``TDEST_width`` argument. If ``TDEST_width`` is
         ``None`` or not set then the attribute should not exist.
         '''
         interface = AxiStreamInterface()
         with self.assertRaises(AttributeError):
             interface.TDEST
-        
+
         interface = AxiStreamInterface(TDEST_width=None)
         with self.assertRaises(AttributeError):
             interface.TDEST
@@ -155,7 +167,7 @@ class TestAxiStreamInterface(TestCase):
         self.assertEqual(len(interface.TDEST._val), interface.TDEST_width)
 
     def test_TUSER_width_property(self):
-        '''There should be a TUSER_width property which is set by the 
+        '''There should be a TUSER_width property which is set by the
         ``TUSER_width`` keyword argument, the default of which is ``None``.
         '''
         interface = AxiStreamInterface()
@@ -168,14 +180,14 @@ class TestAxiStreamInterface(TestCase):
         self.assertEqual(interface.TUSER_width, 6)
 
     def test_TUSER(self):
-        '''There should be an optional TUSER attribute that is an intbv Signal 
-        of width set by the ``TUSER_width`` argument. If ``TUSER_width`` is 
+        '''There should be an optional TUSER attribute that is an intbv Signal
+        of width set by the ``TUSER_width`` argument. If ``TUSER_width`` is
         ``None`` or not set then the attribute should not exist.
         '''
         interface = AxiStreamInterface()
         with self.assertRaises(AttributeError):
             interface.TUSER
-        
+
         interface = AxiStreamInterface(TUSER_width=None)
         with self.assertRaises(AttributeError):
             interface.TUSER
@@ -194,10 +206,10 @@ class TestAxiStreamInterface(TestCase):
 
         interface = AxiStreamInterface(TVALID_init=True)
         self.assertEqual(interface.TVALID, 1)
-        
+
         interface = AxiStreamInterface(TVALID_init=1)
         self.assertEqual(interface.TVALID, 1)
-        
+
         interface = AxiStreamInterface(TVALID_init=False)
         self.assertEqual(interface.TVALID, 0)
 
@@ -210,10 +222,10 @@ class TestAxiStreamInterface(TestCase):
 
         interface = AxiStreamInterface(TREADY_init=True)
         self.assertEqual(interface.TREADY, 1)
-        
+
         interface = AxiStreamInterface(TREADY_init=1)
         self.assertEqual(interface.TREADY, 1)
-        
+
         interface = AxiStreamInterface(TREADY_init=False)
         self.assertEqual(interface.TREADY, 0)
 
@@ -234,9 +246,9 @@ def _get_next_val(packet_list, instance_data):
 
             else:
                 instance_data['packet'] = packet_list.popleft()
-                    
+
         next_val = instance_data['packet'].popleft()
-    
+
     return next_val
 
 def _add_packets_to_stream(stream, packet_list):
@@ -248,16 +260,16 @@ def _add_packets_to_stream(stream, packet_list):
 
 def _add_random_packets_to_stream(
     stream, max_packet_length, max_new_packets, max_val):
-    '''Adds a load of random data to the stream and returns 
+    '''Adds a load of random data to the stream and returns
     the list of added packets.
 
     Each packet is of random length between 0 and max_packet_length
-    and there are a random number between 0 and max_new_packets of 
+    and there are a random number between 0 and max_new_packets of
     them.
     '''
     packet_list = deque(
-        [deque([random.randrange(0, max_val) for m 
-                in range(random.randrange(0, max_packet_length))]) for n 
+        [deque([random.randrange(0, max_val) for m
+                in range(random.randrange(0, max_packet_length))]) for n
          in range(random.randrange(0, max_new_packets))])
 
     return _add_packets_to_stream(stream, packet_list)
@@ -268,7 +280,7 @@ class TestAxiStreamMasterBFM(TestCase):
     '''
 
     def setUp(self):
-        
+
         self.data_byte_width = 8
         self.max_packet_length = 10
         self.max_new_packets = 5
@@ -316,7 +328,7 @@ class TestAxiStreamMasterBFM(TestCase):
 
         for n in range(30):
             packet_list = _add_random_packets_to_stream(
-                self.stream, self.max_packet_length, self.max_new_packets, 
+                self.stream, self.max_packet_length, self.max_new_packets,
                 self.max_rand_val)
 
             total_data_len = sum(len(each) for each in packet_list)
@@ -334,7 +346,7 @@ class TestAxiStreamMasterBFM(TestCase):
         When data is available, TVALID should be set. When TVALID is not set
         it should indicate the data is to be ignored.
         '''
-        
+
         @block
         def testbench(clock):
 
@@ -346,7 +358,7 @@ class TestAxiStreamMasterBFM(TestCase):
 
                 if self.interface.TVALID:
                     next_expected_val = _get_next_val(packet_list, inst_data)
-                    
+
                     if len(inst_data['packet']) == 0:
                         # The last word in the packet
                         assert self.interface.TLAST
@@ -375,10 +387,10 @@ class TestAxiStreamMasterBFM(TestCase):
                 self.max_rand_val)
             total_data_len = sum(len(each) for each in packet_list)
             cycle_count = [0]
-        
+
             myhdl_cosimulation(
                 None, None, testbench, self.args, self.arg_types)
-            
+
             self.assertEqual(total_data_len, cycle_count[0])
 
     def test_add_new_packets_during_simulation(self):
@@ -398,7 +410,7 @@ class TestAxiStreamMasterBFM(TestCase):
                 self.interface.TREADY.next = True
                 if self.interface.TVALID:
                     next_expected_val = _get_next_val(packet_list, inst_data)
-                    
+
                     assert self.interface.TDATA == next_expected_val
                     if len(inst_data['packet']) == 0:
                         assert self.interface.TLAST
@@ -421,7 +433,7 @@ class TestAxiStreamMasterBFM(TestCase):
                     cycle_count[0] += 1
 
                 else:
-                            
+
                     if len(packet_list) == 0:
                         raise StopSimulation
 
@@ -483,7 +495,7 @@ class TestAxiStreamMasterBFM(TestCase):
                 self.interface.TREADY.next = True
                 if self.interface.TVALID:
                     next_expected_val = _get_next_val(packet_list, inst_data)
-                    
+
                     assert self.interface.TDATA == next_expected_val
                     if len(inst_data['packet']) == 0:
                         assert self.interface.TLAST
@@ -506,7 +518,7 @@ class TestAxiStreamMasterBFM(TestCase):
 
                         else:
                             inst_data['empty_delay'] -= 1
-                            
+
                     elif len(packet_list) == 0:
                         raise StopSimulation
 
@@ -567,7 +579,7 @@ class TestAxiStreamMasterBFM(TestCase):
                 assert not self.interface.TVALID
 
             return inst, bfm
-        
+
         # Make sure we have a new stream
         self.stream = AxiStreamMasterBFM()
         myhdl_cosimulation(
@@ -575,7 +587,7 @@ class TestAxiStreamMasterBFM(TestCase):
 
     def test_TREADY_False_pauses_valid_transfer(self):
         '''When the slave sets TREADY to False, no data should be sent, but
-        the data should not be lost. Transfers should continue again as soon 
+        the data should not be lost. Transfers should continue again as soon
         as TREADY is True.
         '''
 
@@ -675,8 +687,8 @@ class TestAxiStreamMasterBFM(TestCase):
 
         def val_gen(data_byte_width):
             # Generates Nones about half the time probability
-            val = random.randrange(0, 2**(8 * self.data_byte_width))
-            if val > 2**(8 * self.data_byte_width - 1):
+            val = random.randrange(0, 2**(8 * data_byte_width))
+            if val > 2**(8 * data_byte_width - 1):
                 return None
             else:
                 return val
@@ -685,8 +697,8 @@ class TestAxiStreamMasterBFM(TestCase):
 
             packet_list = deque(
                 [deque([
-                    val_gen(self.data_byte_width) for m 
-                    in range(random.randrange(0, max_packet_length))]) for n 
+                    val_gen(self.data_byte_width) for m
+                    in range(random.randrange(0, max_packet_length))]) for n
                     in range(random.randrange(0, max_new_packets))])
 
             _add_packets_to_stream(self.stream, packet_list)
@@ -719,7 +731,7 @@ class TestAxiStreamMasterBFM(TestCase):
 
                 else:
                     next_expected_val = _get_next_val(packet_list, inst_data)
-                    
+
                     if all([each is None for each in inst_data['packet']]):
                         assert self.interface.TLAST
 
@@ -751,9 +763,9 @@ class TestAxiStreamMasterBFM(TestCase):
             # Use fixed packet lengths
             packet_list = deque(
                 [deque([
-                    val_gen(self.data_byte_width) for m 
+                    val_gen(self.data_byte_width) for m
                     in range(10)]) for n in range(10)])
-            
+
             # Add a random number of Nones to the packet (at least 1).
             for each_packet in packet_list:
                 each_packet.extend([None] * random.randrange(1, 5))
@@ -769,11 +781,11 @@ class TestAxiStreamMasterBFM(TestCase):
             self.assertEqual(total_data_len, cycle_count[0])
 
     def test_None_in_packets_for_one_cycle_only(self):
-        '''If the data was ``None``, corresponding to setting 
+        '''If the data was ``None``, corresponding to setting
         ``TVALID = False``, it should always only last for a single clock
         cycle before it is discarded.
         '''
-        
+
         @block
         def testbench(clock):
 
@@ -791,7 +803,7 @@ class TestAxiStreamMasterBFM(TestCase):
                 else:
                     # Set TREADY False
                     self.interface.TREADY.next = False
-                
+
                 if inst_data['first_run']:
                     assert not self.interface.TVALID
                     inst_data['first_run'] = False
@@ -819,7 +831,7 @@ class TestAxiStreamMasterBFM(TestCase):
                             cycle_count[0] += 1
 
                 # Stop if there is nothing left to process
-                if (inst_data['stored_val'] is None and 
+                if (inst_data['stored_val'] is None and
                     len(inst_data['packet']) == 0):
 
                     if (len(packet_list) == 0):
@@ -846,8 +858,8 @@ class TestAxiStreamMasterBFM(TestCase):
 
             packet_list = deque(
                 [deque([
-                    val_gen(self.data_byte_width) for m 
-                    in range(random.randrange(0, max_packet_length))]) for n 
+                    val_gen(self.data_byte_width) for m
+                    in range(random.randrange(0, max_packet_length))]) for n
                     in range(random.randrange(0, max_new_packets))])
 
             _add_packets_to_stream(self.stream, packet_list)
@@ -866,7 +878,7 @@ class TestAxiStreamMasterBFM(TestCase):
 #        ``add_data`` method.
 #
 #        All the data set for each pairing of ID and destination should
-#        exist on a separate FIFO and the data should be interleaved 
+#        exist on a separate FIFO and the data should be interleaved
 #        randomly.
 #        '''
 #        raise NotImplementedError
@@ -927,14 +939,14 @@ class TestAxiStreamSlaveBFM(TestCase):
     '''
 
     def setUp(self):
-        
+
         self.data_byte_width = 8
         self.max_packet_length = 20
         self.max_new_packets = 10
         self.max_rand_val = 2**(8 * self.data_byte_width)
 
         self.source_stream = AxiStreamMasterBFM()
-        self.source_test_sink = AxiStreamSlaveBFM()
+        self.test_sink = AxiStreamSlaveBFM()
 
         self.interface = AxiStreamInterface(self.data_byte_width)
         clock = Signal(bool(0))
@@ -951,7 +963,7 @@ class TestAxiStreamSlaveBFM(TestCase):
         @block
         def testbench(clock):
 
-            test_sink = self.source_test_sink
+            test_sink = self.test_sink
 
             master = self.source_stream.model(clock, self.interface)
             slave = test_sink.model(clock, self.interface)
@@ -972,7 +984,7 @@ class TestAxiStreamSlaveBFM(TestCase):
                         trimmed_packet_list[:packets_to_check],
                         test_sink.completed_packets[:packets_to_check]):
 
-                        self.assertTrue(all(ref == test for ref, test in 
+                        self.assertTrue(all(ref == test for ref, test in
                                             zip(ref_packet, test_packet)))
 
 
@@ -988,13 +1000,13 @@ class TestAxiStreamSlaveBFM(TestCase):
 
         for n in range(30):
             # lots of test cases
-            
+
             # We need new BFMs for every run
             self.source_stream = AxiStreamMasterBFM()
-            self.source_test_sink = AxiStreamSlaveBFM()
-            
+            self.test_sink = AxiStreamSlaveBFM()
+
             packet_list = _add_random_packets_to_stream(
-                self.source_stream, self.max_packet_length, 
+                self.source_stream, self.max_packet_length,
                 self.max_new_packets, self.max_rand_val)
 
             trimmed_packet_list = [
@@ -1004,18 +1016,18 @@ class TestAxiStreamSlaveBFM(TestCase):
                 None, None, testbench, self.args, self.arg_types)
 
     def test_TREADY_probability(self):
-        '''There should be a TREADY_probability argument to the model 
+        '''There should be a TREADY_probability argument to the model
         that dictates the probability of TREADY being True.
         '''
         @block
         def testbench(clock):
 
-            test_sink = self.source_test_sink
+            test_sink = self.test_sink
 
             master = self.source_stream.model(clock, self.interface)
             slave = test_sink.model(
                 clock, self.interface, TREADY_probability=TREADY_probability)
-            
+
             check_packet_next_time = Signal(False)
             checker_data = {'packets_to_check': 0,
                             'TREADY_False_count': 0}
@@ -1037,7 +1049,7 @@ class TestAxiStreamSlaveBFM(TestCase):
                         trimmed_packet_list[:packets_to_check],
                         test_sink.completed_packets[:packets_to_check]):
 
-                        self.assertTrue(all(ref == test for ref, test in 
+                        self.assertTrue(all(ref == test for ref, test in
                                             zip(ref_packet, test_packet)))
 
 
@@ -1060,11 +1072,11 @@ class TestAxiStreamSlaveBFM(TestCase):
             TREADY_probability = TREADY_percentage_probability/100.0
             # We need new BFMs for every run
             self.source_stream = AxiStreamMasterBFM()
-            self.source_test_sink = AxiStreamSlaveBFM()
+            self.test_sink = AxiStreamSlaveBFM()
 
-            # Use fixed length packets so it is very likely to be 
+            # Use fixed length packets so it is very likely to be
             packet_list = deque(
-                [deque([random.randrange(0, self.max_rand_val) for m 
+                [deque([random.randrange(0, self.max_rand_val) for m
                         in range(20)]) for n in range(10)])
 
             packet_list = _add_packets_to_stream(
@@ -1076,7 +1088,7 @@ class TestAxiStreamSlaveBFM(TestCase):
             myhdl_cosimulation(
                 None, None, testbench, self.args, self.arg_types)
 
-    
+
     def test_current_packet_property(self):
         '''There should be a ``current_packet`` property that returns the
         packet that is currently being recorded and has not yet completed.
@@ -1084,7 +1096,7 @@ class TestAxiStreamSlaveBFM(TestCase):
         @block
         def testbench(clock):
 
-            test_sink = self.source_test_sink
+            test_sink = self.test_sink
 
             master = self.source_stream.model(clock, self.interface)
             slave = test_sink.model(clock, self.interface)
@@ -1096,11 +1108,11 @@ class TestAxiStreamSlaveBFM(TestCase):
 
             @always(clock.posedge)
             def checker():
-                if (len(test_sink.completed_packets) == 
+                if (len(test_sink.completed_packets) ==
                     len(trimmed_packet_list)):
                     raise StopSimulation
 
-                if (self.interface.TVALID and self.interface.TREADY 
+                if (self.interface.TVALID and self.interface.TREADY
                     and not self.interface.TLAST):
 
                     checker_data['data_in_packet'] += 1
@@ -1120,7 +1132,7 @@ class TestAxiStreamSlaveBFM(TestCase):
                         trimmed_packet_list[packet_idx][:packet_length])
 
                     self.assertTrue(
-                        all(ref == test for ref, test in 
+                        all(ref == test for ref, test in
                             zip(expected_packet, test_sink.current_packet)))
 
                 elif self.interface.TLAST:
@@ -1131,13 +1143,13 @@ class TestAxiStreamSlaveBFM(TestCase):
 
         for n in range(30):
             # lots of test cases
-            
+
             # We need new BFMs for every run
             self.source_stream = AxiStreamMasterBFM()
-            self.source_test_sink = AxiStreamSlaveBFM()
-            
+            self.test_sink = AxiStreamSlaveBFM()
+
             packet_list = _add_random_packets_to_stream(
-                self.source_stream, self.max_packet_length, 
+                self.source_stream, self.max_packet_length,
                 self.max_new_packets, self.max_rand_val)
 
             trimmed_packet_list = [
@@ -1153,18 +1165,18 @@ class TestAxiStreamSlaveBFM(TestCase):
         @block
         def testbench(clock):
 
-            test_sink = self.source_test_sink
+            test_sink = self.test_sink
 
             master = self.source_stream.model(clock, self.interface)
             slave = test_sink.model(
                 clock, self.interface, TREADY_probability=TREADY_probability)
-            
+
             @always(clock.posedge)
             def stopper():
 
                 if len(test_sink.completed_packets) == len(packet_list):
                     raise StopSimulation
-            
+
             return master, slave, stopper
 
         for TREADY_percentage_probability in (90,):#range(10, 90, 10):
@@ -1172,7 +1184,7 @@ class TestAxiStreamSlaveBFM(TestCase):
             TREADY_probability = TREADY_percentage_probability/100.0
             # We need new BFMs for every run
             self.source_stream = AxiStreamMasterBFM()
-            self.source_test_sink = AxiStreamSlaveBFM()
+            self.test_sink = AxiStreamSlaveBFM()
 
             packet_list = deque([])
             trimmed_packet_list = []
@@ -1198,4 +1210,200 @@ class TestAxiStreamSlaveBFM(TestCase):
                 None, None, testbench, self.args, self.arg_types)
 
             self.assertEqual(
-                trimmed_packet_list, self.source_test_sink.completed_packets)
+                trimmed_packet_list, self.test_sink.completed_packets)
+
+class TestAxiMasterPlaybackBlock(TestCase):
+    '''There should be a convertible AXI master block that simply plays back
+    the packets it is passed.
+    '''
+
+    def setUp(self):
+
+        self.data_byte_width = 8
+        self.max_rand_val = 2**(8 * self.data_byte_width)
+
+        self.axi_slave = AxiStreamSlaveBFM()
+
+        self.axi_interface = AxiStreamInterface(self.data_byte_width)
+        self.clock = Signal(bool(0))
+
+        self.args = {
+            'clock': self.clock, 'axi_interface': self.axi_interface,
+            'packets': None}
+
+        self.arg_types = {
+            'clock': 'clock',
+            'axi_interface': {'TVALID': 'output', 'TREADY': 'custom',
+                              'TDATA': 'output', 'TLAST': 'output'},
+            'packets': 'non-signal'}
+
+    def sim_wrapper(
+        self, sim_cycles, dut_factory, ref_factory, args, arg_types,
+        **kwargs):
+
+        return myhdl_cosimulation(
+            sim_cycles, dut_factory, ref_factory, args, arg_types, **kwargs)
+
+    def test_playback_of_packets(self):
+        '''The packets should be a list of lists and should be properly
+        handleable by a valid AXI slave.
+        '''
+        max_packet_length = 20
+        max_new_packets = 50
+        max_val = self.max_rand_val
+
+        packet_list = [
+            [random.randrange(0, max_val) for m
+             in range(random.randrange(0, max_packet_length))] for n
+            in range(random.randrange(0, max_new_packets))]
+
+        self.args['packets'] = packet_list
+
+        non_empty_packets = [
+            packet for packet in packet_list if len(packet) > 0]
+        non_empty_packet_lengths = [
+            len(packet) for packet in non_empty_packets]
+
+        max_cycles = 50 * max_packet_length * max_new_packets
+
+        @block
+        def exit_checker(clock):
+
+            cycles = [0]
+            @always(clock.posedge)
+            def checker():
+                # A sanity check to make sure we don't hang
+                assert cycles[0] < max_cycles
+                cycles[0] += 1
+
+                if (len(self.axi_slave.completed_packets) >=
+                    len(non_empty_packet_lengths)):
+                    raise StopSimulation
+
+            return checker
+
+        custom_sources = [
+            (exit_checker, (self.clock,), {}),
+            (self.axi_slave.model, (self.clock, self.axi_interface, 0.5), {})]
+
+        self.sim_wrapper(
+            None, axi_master_playback, axi_master_playback, self.args,
+            self.arg_types, custom_sources=custom_sources)
+
+        self.assertEqual(self.axi_slave.completed_packets, non_empty_packets)
+
+    def test_None_sets_TVALID_False(self):
+        '''Values of None in the packets should set TVALID to False for a
+        cycle.
+        '''
+        max_packet_length = 20
+        max_new_packets = 50
+        max_val = self.max_rand_val
+
+        def val_gen():
+            # Generates Nones about half the time probability
+            val = random.randrange(0, max_val*2)
+            if val >= max_val:
+                return None
+            else:
+                return val
+
+        packet_list = [
+            [val_gen() for m
+             in range(random.randrange(0, max_packet_length))] for n
+            in range(random.randrange(0, max_new_packets))]
+
+        # Make sure we have at least one packet with None at its end.
+        packet_list.append([random.randrange(0, max_val) for m in range(10)])
+        packet_list[-1].append(None)
+
+        None_trimmed_packet_list = [
+            [val for val in packet if val is not None] for packet in
+            packet_list]
+
+        trimmed_packets = [
+            packet for packet in None_trimmed_packet_list if len(packet) > 0]
+
+        self.args['packets'] = packet_list
+
+        trimmed_packet_lengths = [len(packet) for packet in trimmed_packets]
+
+        max_cycles = 10 * max_packet_length * max_new_packets
+
+        @block
+        def exit_checker(clock):
+
+            cycles = [0]
+            @always(clock.posedge)
+            def checker():
+                # A sanity check to make sure we don't hang
+                try:
+                    assert cycles[0] < max_cycles
+                    cycles[0] += 1
+                except AssertionError:
+                    raise StopSimulation
+
+                if (len(self.axi_slave.completed_packets) >=
+                    len(trimmed_packet_lengths)):
+                    raise StopSimulation
+
+            return checker
+
+        # Firstly check it with the slave always ready. This means we can
+        # count the clock cycles to infer the TVALID going false.
+        custom_sources = [
+            (exit_checker, (self.clock,), {}),
+            (self.axi_slave.model, (self.clock, self.axi_interface, 1.0), {})]
+
+        self.sim_wrapper(
+            None, axi_master_playback, axi_master_playback, self.args,
+            self.arg_types, custom_sources=custom_sources)
+
+        self.assertEqual(self.axi_slave.completed_packets, trimmed_packets)
+
+    def test_block_converts(self):
+        '''The axi_master_playback block should convert to both VHDL and
+        Verilog.
+        '''
+        max_packet_length = 20
+        max_new_packets = 50
+        max_val = self.max_rand_val
+
+        def val_gen():
+            # Generates Nones about half the time probability
+            val = random.randrange(0, max_val*2)
+            if val >= max_val:
+                return None
+            else:
+                return val
+
+        packet_list = [
+            [val_gen() for m
+             in range(random.randrange(0, max_packet_length))] for n
+            in range(random.randrange(0, max_new_packets))]
+
+        # Make sure we have at least one packet with None at its end.
+        packet_list.append([random.randrange(0, max_val) for m in range(10)])
+        packet_list[-1].append(None)
+
+        None_trimmed_packet_list = [
+            [val for val in packet if val is not None] for packet in
+            packet_list]
+
+        self.args['packets'] = packet_list
+
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            instance = axi_master_playback(**self.args)
+            instance.convert('VHDL', path=tmp_dir)
+            self.assertTrue(os.path.exists(
+                os.path.join(tmp_dir, 'axi_master_playback.vhd')))
+
+            instance = axi_master_playback(**self.args)
+            instance.convert('Verilog', path=tmp_dir)
+            self.assertTrue(os.path.exists(
+                os.path.join(tmp_dir, 'axi_master_playback.v')))
+        finally:
+            shutil.rmtree(tmp_dir)
+
+

@@ -2,6 +2,7 @@ from myhdl import *
 from collections import deque
 import copy
 import random
+from itertools import dropwhile
 
 class AxiStreamInterface(object):
     '''The AXI stream interface definition'''
@@ -22,8 +23,9 @@ class AxiStreamInterface(object):
     def TUSER_width(self):
         return self._TUSER_width
 
-    def __init__(self, bus_width=4, TID_width=None, TDEST_width=None, 
-                 TUSER_width=None, TVALID_init=False, TREADY_init=False):
+    def __init__(self, bus_width=4, TID_width=None, TDEST_width=None,
+                 TUSER_width=None, TVALID_init=False, TREADY_init=False,
+                 use_TSTRB=False, use_TKEEP=False):
         '''Creates an AXI4 Stream interface object. The signals and parameters
         are exactly as described in the AMBA 4 AXI4 Stream Protocol
         Specification.
@@ -58,19 +60,27 @@ class AxiStreamInterface(object):
         be implemented differently. There may be additional constraints on the
         size of the interfaces that need to be considered.
 
-        Initial values of TVALID and TREADY can be set with the TVALID_init
-        and TREADY_init arguments respectively. In both cases the argument
-        is coerced to be a boolean type.
+        Initial values of ``TVALID`` and ``TREADY`` can be set with the
+        ``TVALID_init`` and ``TREADY_init`` arguments respectively. In both
+        cases the argument is coerced to be a boolean type.
+
+        By default, ``TSTRB`` and ``TKEEP`` are not included in the interface.
+        They can be added by setting ``use_TSTRB`` or ``use_TKEEP`` to True.
         '''
+
         self._bus_width = int(bus_width)
 
         self.TVALID = Signal(bool(TVALID_init))
-        self.TREADY = Signal(bool(TREADY_init))        
+        self.TREADY = Signal(bool(TREADY_init))
         self.TDATA = Signal(intbv(0)[8*self.bus_width:])
-        self.TSTRB = Signal(intbv(0)[self.bus_width:])
-        self.TKEEP = Signal(intbv(0)[self.bus_width:]) 
         self.TLAST = Signal(bool(0))
-        
+
+        if use_TSTRB:
+            self.TSTRB = Signal(intbv(0)[self.bus_width:])
+
+        if use_TKEEP:
+            self.TKEEP = Signal(intbv(0)[self.bus_width:])
+
         if TID_width is not None:
             self._TID_width = int(TID_width)
             self.TID = Signal(intbv(0)[self.TID_width:])
@@ -90,11 +100,11 @@ class AxiStreamInterface(object):
             self._TUSER_width = None
 
 class AxiStreamMasterBFM(object):
-    
+
     def __init__(self):
         '''Create an AXI4 Stream master bus functional model (BFM).
 
-        Data is added to the stream using the ``add_data`` method, at 
+        Data is added to the stream using the ``add_data`` method, at
         which point all the parameters can be set up for a particular sequence
         of transfers.
 
@@ -111,8 +121,8 @@ class AxiStreamMasterBFM(object):
         ``False`` for that data value. This allows the calling code to insert
         delays in the data output.
         '''
-        #The ``stream_ID`` and ``stream_destination`` parameters are used to 
-        #set the ``TID`` and ``TDEST`` signals respectively for the data 
+        #The ``stream_ID`` and ``stream_destination`` parameters are used to
+        #set the ``TID`` and ``TDEST`` signals respectively for the data
         #provided.
         #'''
 
@@ -139,11 +149,11 @@ class AxiStreamMasterBFM(object):
 
         @always(clock.posedge)
         def model_inst():
-            
-            # We need to try to update either when a piece of data has been 
+
+            # We need to try to update either when a piece of data has been
             # propagated (TVALID and TREADY) or when we previously didn't
             # have any data, or the data was None (not TVALID)
-            if ((interface.TVALID and interface.TREADY) or 
+            if ((interface.TVALID and interface.TREADY) or
                 not interface.TVALID):
 
                 if 'packet' not in model_rundata:
@@ -156,7 +166,7 @@ class AxiStreamMasterBFM(object):
 
                                 model_rundata['packet'] = self._data[
                                     (stream_ID, stream_destination)].popleft()
-                                
+
                             else:
                                 # Nothing left to get, so we drop out.
                                 break
@@ -195,12 +205,13 @@ class AxiStreamMasterBFM(object):
 
                 else:
                     interface.TVALID.next = False
-                    # no data, so simply remove the packet for initialisation 
+                    # no data, so simply remove the packet for initialisation
                     # next time
                     del model_rundata['packet']
 
 
         return model_inst
+
 
 class AxiStreamSlaveBFM(object):
 
@@ -220,9 +231,13 @@ class AxiStreamSlaveBFM(object):
     def __init__(self):
         '''Create an AXI4 Stream slave bus functional model (BFM).
 
-        Valid data that is received is recorded. Completed packets are 
-        available for inspection through the ``completed_packets`` 
+        Valid data that is received is recorded. Completed packets are
+        available for inspection through the ``completed_packets``
         property.
+
+        The packet currently being populated can be found on the
+        ``current_packet`` attribute. This provides a snapshot and does
+        not change with the underlying data structure.
 
         Currently ``TUSER`` is ignored.
         '''
@@ -241,9 +256,9 @@ class AxiStreamSlaveBFM(object):
 
             if interface.TVALID and interface.TREADY:
                 self._current_packet.append(copy.copy(interface.TDATA._val))
-                
+
                 if interface.TLAST:
-                    # End of a packet, so copy the current packet into 
+                    # End of a packet, so copy the current packet into
                     # complete_packets and empty the current packet.
                     self._completed_packets.append(
                         copy.copy(self._current_packet))
@@ -251,3 +266,70 @@ class AxiStreamSlaveBFM(object):
                     del self._current_packet[:]
 
         return model_inst
+
+
+@block
+def axi_master_playback(clock, axi_interface, packets):
+
+    # From the packets, we preload all the values that should be output.
+    # This is TDATA, TVALID and TLAST
+
+    TDATAs = tuple(val if val is not None else 0 for packet in packets
+                   for val in packet)
+
+    TVALIDs = tuple(1 if val is not None else 0 for packet in packets
+                   for val in packet)
+
+    # To find TLAST, we need both the length of the packet and the length
+    # of the packet with the trailing Nones stripped away.
+    packet_lengths = [len(packet) for packet in packets]
+    None_stripped_packet_lengths = [
+        len(tuple(dropwhile(lambda x: x is None, reversed(packet)))) for
+        packet in packets]
+
+    TLASTs = [0] * len(TDATAs)
+
+    TLAST_offset = -1
+    for length, stripped_length in zip(
+        packet_lengths, None_stripped_packet_lengths):
+
+        if length > 0:
+            TLASTs[TLAST_offset + stripped_length] = 1
+            TLAST_offset += length
+
+        else:
+            continue
+
+    # TLASTs should be a tuple
+    TLASTs = tuple(TLASTs)
+    number_of_vals = len(TDATAs)
+    value_index = Signal(intbv(0, min=0, max=number_of_vals + 1))
+
+    internal_TVALID = Signal(False)
+
+    @always(clock.posedge)
+    def playback():
+
+        if ((axi_interface.TREADY and internal_TVALID) or
+            not internal_TVALID):
+
+            if value_index < number_of_vals:
+
+                # We don't actually need to set these when TVALID is low,
+                # but there is no harm in doing so.
+                axi_interface.TLAST.next = TLASTs[value_index]
+                axi_interface.TDATA.next = TDATAs[value_index]
+
+                internal_TVALID.next = TVALIDs[value_index]
+                axi_interface.TVALID.next = TVALIDs[value_index]
+
+                value_index.next = value_index + 1
+            else:
+                # The last output word
+                if (axi_interface.TREADY and internal_TVALID):
+                    internal_TVALID.next = False
+                    axi_interface.TVALID.next = False
+
+                value_index.next = value_index
+
+    return playback
