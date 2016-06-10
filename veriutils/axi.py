@@ -240,19 +240,42 @@ class AxiStreamSlaveBFM(object):
         not change with the underlying data structure.
 
         Currently ``TUSER`` is ignored.
+
+        The MyHDL model is instantiated using the ``model`` method.
         '''
         self._completed_packets = []
         self._current_packet = []
 
     @block
     def model(self, clock, interface, TREADY_probability=1.0):
+        '''Instantiate a AXI stream slave MyHDL block that acts as the
+        HDL front end to the class.
+
+        ``clock`` and ``interface`` are the binary clock signal and valid
+        AXI signal interface respectively.
+
+        ``TREADY_probability`` gives the probability that on a given clock
+        cycle the ``TREADY`` signal will be asserted. Changing it from
+        the default of ``1.0`` allows the slave to not always be ready.
+
+        If ``TREADY_probability`` is set to ``None``, then the model can be
+        used in passive mode whereby it never sets ``TREADY``. It still acts
+        as expected recording the AXI transfers properly. This is useful
+        if you want this block to sniff the lines and simply record the
+        transactions (as an aside, this also happens when
+        ``TREADY_probability`` is set to ``0.0``, but the driver code is
+        still implemented in that case).
+        '''
 
         @always(clock.posedge)
-        def model_inst():
+        def TREADY_driver():
             if TREADY_probability > random.random():
                 interface.TREADY.next = True
             else:
                 interface.TREADY.next = False
+
+        @always(clock.posedge)
+        def model_inst():
 
             if interface.TVALID and interface.TREADY:
                 self._current_packet.append(copy.copy(interface.TDATA._val))
@@ -265,7 +288,11 @@ class AxiStreamSlaveBFM(object):
 
                     del self._current_packet[:]
 
-        return model_inst
+        if TREADY_probability is None:
+            return model_inst
+
+        else:
+            return model_inst, TREADY_driver
 
 
 @block

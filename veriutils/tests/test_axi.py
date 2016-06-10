@@ -1088,6 +1088,66 @@ class TestAxiStreamSlaveBFM(TestCase):
             myhdl_cosimulation(
                 None, None, testbench, self.args, self.arg_types)
 
+    def test_TREADY_None(self):
+        '''There should be possible to set TREADY_probability to None which
+        prevents TREADY being driven.
+        '''
+        @block
+        def testbench(clock, use_slave=True):
+
+            test_sink = self.test_sink
+
+            master = self.source_stream.model(clock, self.interface)
+            test_sniffer = test_sink.model(
+                clock, self.interface, TREADY_probability=None)
+
+            slave = alt_test_sink.model(
+                clock, self.interface, TREADY_probability=0.5)
+
+            @always(clock.posedge)
+            def stopper():
+                if (len(trimmed_packet_list) ==
+                    len(alt_test_sink.completed_packets)):
+                    raise StopSimulation
+
+            if use_slave:
+                return master, slave, test_sniffer, stopper
+            else:
+                return master, test_sniffer, stopper
+
+        # We need new BFMs for every run
+        self.source_stream = AxiStreamMasterBFM()
+        self.test_sink = AxiStreamSlaveBFM()
+
+        # We create another sink that actually does twiddle TREADY
+        alt_test_sink = AxiStreamSlaveBFM()
+
+        # Use fixed length packets so it is very likely to be
+        packet_list = deque(
+            [deque([random.randrange(0, self.max_rand_val) for m
+                    in range(random.randrange(0, 20))]) for n in range(10)])
+
+        packet_list = _add_packets_to_stream(
+            self.source_stream, packet_list)
+
+        trimmed_packet_list = [
+            packet for packet in packet_list if len(packet) > 0]
+
+        myhdl_cosimulation(
+            None, None, testbench, self.args, self.arg_types)
+
+        self.assertEqual(
+            alt_test_sink.completed_packets, self.test_sink.completed_packets)
+
+        # Also check TREADY is not being driven.
+        self.args['use_slave'] = False
+        self.arg_types['use_slave'] = 'non-signal'
+        self.test_sink = AxiStreamSlaveBFM()
+        myhdl_cosimulation(
+            100, None, testbench, self.args, self.arg_types)
+
+        self.assertTrue(len(self.test_sink.completed_packets) == 0)
+        self.assertTrue(len(self.test_sink.current_packet) == 0)
 
     def test_current_packet_property(self):
         '''There should be a ``current_packet`` property that returns the

@@ -305,6 +305,17 @@ class CosimulationTestMixin(object):
         self.assertEqual(test_input[:-1], ref_results['reset'][1:])
         self.assertEqual(test_input[:-1], dut_results['reset'][1:])
 
+    def test_axi_stream_in_argument(self):
+        '''It should be possible to set an argument to `axi_stream_in`, in
+        which case it is required that argument is an interface providing a
+        suitable subset of the AXI4 Stream interface.
+
+        Though it should not be enforced, an `axi_stream_in` interface
+        should be driven through a `custom_source` block.
+        '''
+        raise NotImplementedError
+
+
     def test_all_argument_types_and_args_have_same_keys(self):
         '''The arg dict should have the same keys as the arg types dict
         '''
