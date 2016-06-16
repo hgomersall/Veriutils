@@ -260,7 +260,7 @@ class AxiStreamSlaveBFM(object):
 
         If ``TREADY_probability`` is set to ``None``, then the model can be
         used in passive mode whereby it never sets ``TREADY``. It still acts
-        as expected recording the AXI transfers properly. This is useful
+        as expected, recording the AXI transfers properly. This is useful
         if you want this block to sniff the lines and simply record the
         transactions (as an aside, this also happens when
         ``TREADY_probability`` is set to ``0.0``, but the driver code is

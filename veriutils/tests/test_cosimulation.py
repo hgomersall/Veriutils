@@ -64,25 +64,17 @@ class CosimulationTestMixin(object):
         **kwargs): # pragma: no cover
         raise NotImplementedError
 
-    def construct_simulate_and_munge(
-        self, sim_cycles, dut_factory, ref_factory, args, arg_types,
-        **kwargs): # pragma: no cover
-        raise NotImplementedError
-
-    def results_munger(self, premunged_results):
-        return premunged_results
-
     def test_single_clock(self):
         '''The argument lists should contain one and only one clock.
         '''
         self.assertRaisesRegex(
-            ValueError, 'Missing clock', self.construct_simulate_and_munge, 30,
+            ValueError, 'Missing clock', self.construct_and_simulate, 30,
             self.identity_factory, self.identity_factory, self.default_args,
             {'test_input': 'custom', 'test_output': 'custom', 'reset': 'init_reset',
              'clock': 'custom'})
 
         self.assertRaisesRegex(
-            ValueError, 'Multiple clocks', self.construct_simulate_and_munge, 30,
+            ValueError, 'Multiple clocks', self.construct_and_simulate, 30,
             self.identity_factory, self.identity_factory, self.default_args,
             {'test_input': 'clock', 'test_output': 'custom', 'reset': 'init_reset',
              'clock': 'clock'})
@@ -95,7 +87,7 @@ class CosimulationTestMixin(object):
         args['test_input'] = InterfaceWithClock()
 
         self.assertRaisesRegex(
-            ValueError, 'Multiple clocks', self.construct_simulate_and_munge, 30,
+            ValueError, 'Multiple clocks', self.construct_and_simulate, 30,
             self.identity_factory, self.identity_factory, args,
             {'test_input': {'clock': 'clock'}, 'test_output': 'custom',
              'reset': 'init_reset', 'clock': 'clock'})
@@ -107,19 +99,19 @@ class CosimulationTestMixin(object):
         be at most one of either of these.
         '''
         self.assertRaisesRegex(
-            ValueError, 'Multiple resets', self.construct_simulate_and_munge, 30,
+            ValueError, 'Multiple resets', self.construct_and_simulate, 30,
             self.identity_factory, self.identity_factory, self.default_args,
             {'test_input': 'init_reset', 'test_output': 'custom',
              'reset': 'init_reset', 'clock': 'clock'})
 
         self.assertRaisesRegex(
-            ValueError, 'Multiple resets', self.construct_simulate_and_munge, 30,
+            ValueError, 'Multiple resets', self.construct_and_simulate, 30,
             self.identity_factory, self.identity_factory, self.default_args,
             {'test_input': 'custom_reset', 'test_output': 'custom',
              'reset': 'custom_reset', 'clock': 'clock'})
 
         self.assertRaisesRegex(
-            ValueError, 'Multiple resets', self.construct_simulate_and_munge, 30,
+            ValueError, 'Multiple resets', self.construct_and_simulate, 30,
             self.identity_factory, self.identity_factory, self.default_args,
             {'test_input': 'custom_reset', 'test_output': 'custom',
              'reset': 'init_reset', 'clock': 'clock'})
@@ -132,7 +124,7 @@ class CosimulationTestMixin(object):
         args['test_input'] = InterfaceWithReset()
 
         self.assertRaisesRegex(
-            ValueError, 'Multiple resets', self.construct_simulate_and_munge, 30,
+            ValueError, 'Multiple resets', self.construct_and_simulate, 30,
             self.identity_factory, self.identity_factory, args,
             {'test_input': {'reset': 'custom_reset'}, 'test_output': 'custom',
              'reset': 'init_reset', 'clock': 'clock'})
@@ -156,7 +148,7 @@ class CosimulationTestMixin(object):
         del self.default_args['reset']
         del self.default_arg_types['reset']
 
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, no_reset_identity_factory, no_reset_identity_factory,
             self.default_args, self.default_arg_types)
 
@@ -175,7 +167,7 @@ class CosimulationTestMixin(object):
         '''The first two output edges should yield the init reset values.
         '''
         sim_cycles = 20
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, self.identity_factory, self.identity_factory,
             self.default_args, self.default_arg_types)
 
@@ -211,7 +203,7 @@ class CosimulationTestMixin(object):
                           self.default_args['clock']), {})
 
         sim_cycles = 20
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, self.identity_factory, self.identity_factory,
             self.default_args,
             {'test_input': 'custom', 'test_output': 'output',
@@ -220,7 +212,6 @@ class CosimulationTestMixin(object):
 
         test_input = [i % mod_max for i in range(sim_cycles)]
 
-        test_input = self.results_munger(test_input)
         self.assertEqual(test_input, ref_results['test_input'])
         self.assertEqual(test_input, dut_results['test_input'])
 
@@ -252,13 +243,13 @@ class CosimulationTestMixin(object):
 
         self.assertRaisesRegex(
             ValueError, 'Malformed custom source',
-            self.construct_simulate_and_munge, *call_args,
+            self.construct_and_simulate, *call_args,
             custom_sources=
             ([_custom_source, self.default_args['test_input'], {}],))
 
         self.assertRaisesRegex(
             ValueError, 'Malformed custom source',
-            self.construct_simulate_and_munge, *call_args,
+            self.construct_and_simulate, *call_args,
             custom_sources=
             [(_custom_source, (self.default_args['test_input'],), None)])
 
@@ -286,7 +277,7 @@ class CosimulationTestMixin(object):
 
 
         sim_cycles = 20
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, self.identity_factory, self.identity_factory,
             self.default_args,
             {'test_input': 'custom', 'test_output': 'output',
@@ -297,21 +288,147 @@ class CosimulationTestMixin(object):
         # sim cycles were added at sim time
         test_input = test_input[:sim_cycles]
 
-        # Do any necessary munging of the results
-        test_input = self.results_munger(test_input)
-
         # Offset the results by one since test_input has recorded one
         # earlier cycle.
         self.assertEqual(test_input[:-1], ref_results['reset'][1:])
         self.assertEqual(test_input[:-1], dut_results['reset'][1:])
 
+    def test_axi_stream_out_argument(self):
+        '''It should be possible to set an argument type to ``axi_stream_out``
+        in which case the AXI4 stream packets are output in addition to the
+        signals.
+
+        The output should be a dictionary with two keys, ``packets`` and
+        ``signals``. ``packets`` should be the packetised outputs and signals
+        should be the raw signal outputs.
+        '''
+        self.clock = Signal(bool(1))
+        self.test_out = AxiStreamInterface()
+
+        max_packet_length = 20
+        max_new_packets = 50
+        max_val = 2**(8 * self.test_out.bus_width)
+
+        def val_gen():
+            # Generates Nones about half the time probability
+            val = random.randrange(0, max_val*2)
+            if val >= max_val:
+                return None
+            else:
+                return val
+
+        packet_list = [
+            [val_gen() for m
+             in range(random.randrange(0, max_packet_length))] for n
+            in range(random.randrange(0, max_new_packets))]
+
+        self.default_args = {'axi_interface': self.test_out,
+                             'clock': self.clock,
+                             'packets': packet_list}
+
+        self.default_arg_types = {'axi_interface': 'axi_stream_out',
+                                  'clock': 'clock',
+                                  'packets': 'non-signal'}
+
+        sim_cycles = sum(len(packet) for packet in packet_list) + 1
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, axi_master_playback, axi_master_playback,
+            self.default_args, self.default_arg_types)
+
+        None_trimmed_packet_list = [
+            [val for val in packet if val is not None] for packet in
+            packet_list]
+
+        trimmed_packets = [
+            packet for packet in None_trimmed_packet_list if len(packet) > 0]
+
+        self.assertEqual(
+            ref_results['axi_interface']['packets'], trimmed_packets)
+
+        self.assertEqual(
+            dut_results['axi_interface']['packets'], trimmed_packets)
+
+    @unittest.expectedFailure
+    def test_axi_stream_out_as_sub_interface(self):
+        '''It should be possible to set part of an interface to type
+        ``axi_stream_out``.
+
+        In this case in which an interface has as an attribute an AXI
+        interface, then the AXI interface can be set as an `axi_stream_out`.
+        '''
+        # FIXME currently because the recorder sink only supports one level
+        # of interface, this test will fail.
+        # Also, the code that sets the output signals needs correcting for
+        # multiple layers.
+        self.clock = Signal(bool(1))
+
+        class MetaAxiInterface(object):
+            def __init__(self):
+                self.axi_interface = AxiStreamInterface()
+
+        self.test_out = MetaAxiInterface()
+
+        max_packet_length = 20
+        max_new_packets = 50
+        max_val = 2**(8 * self.test_out.axi_interface.bus_width)
+
+        def val_gen():
+            # Generates Nones about half the time probability
+            val = random.randrange(0, max_val*2)
+            if val >= max_val:
+                return None
+            else:
+                return val
+
+        @block
+        def source_wrapper(clock, meta_interface, packets):
+            return axi_master_playback(
+                clock, meta_interface.axi_interface, packets)
+
+        packet_list = [
+            [val_gen() for m
+             in range(random.randrange(0, max_packet_length))] for n
+            in range(random.randrange(0, max_new_packets))]
+
+        self.default_args = {'meta_interface': self.test_out,
+                             'clock': self.clock,
+                             'packets': packet_list}
+
+        self.default_arg_types = {
+            'meta_interface': {'axi_interface': 'axi_stream_out'},
+            'clock': 'clock',
+            'packets': 'non-signal'}
+
+        sim_cycles = sum(len(packet) for packet in packet_list) + 1
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, source_wrapper, source_wrapper,
+            self.default_args, self.default_arg_types)
+
+        None_trimmed_packet_list = [
+            [val for val in packet if val is not None] for packet in
+            packet_list]
+
+        trimmed_packets = [
+            packet for packet in None_trimmed_packet_list if len(packet) > 0]
+
+        self.assertEqual(
+            ref_results['meta_interface']['axi_interface']['axi_packets'],
+            trimmed_packets)
+
+        self.assertEqual(
+            dut_results['meta_interface']['axi_interface']['axi_packets'],
+            trimmed_packets)
+
+    @unittest.expectedFailure
     def test_axi_stream_in_argument(self):
         '''It should be possible to set an argument to `axi_stream_in`, in
         which case it is required that argument is an interface providing a
         suitable subset of the AXI4 Stream interface.
 
         Though it should not be enforced, an `axi_stream_in` interface
-        should be driven through a `custom_source` block.
+        should be driven through a user defined `custom_source` block.
         '''
         raise NotImplementedError
 
@@ -321,7 +438,7 @@ class CosimulationTestMixin(object):
         '''
         self.assertRaisesRegex(
             ValueError, 'Invalid argument or argument type keys',
-            self.construct_simulate_and_munge, 30,
+            self.construct_and_simulate, 30,
             self.identity_factory, self.identity_factory, self.default_args,
             {'test_input': 'custom', 'test_output': 'custom', 'reset': 'custom',
              'foo': 'custom'})
@@ -331,7 +448,7 @@ class CosimulationTestMixin(object):
         '''The test object with identity factories should pass every time'''
 
         sim_cycles = 30
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, self.identity_factory, self.identity_factory,
             self.default_args, self.default_arg_types)
 
@@ -450,7 +567,7 @@ class CosimulationTestMixin(object):
             return not_identity
 
 
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, not_identity_factory, identity_factory,
             args, arg_types)
 
@@ -486,7 +603,7 @@ class CosimulationTestMixin(object):
         args['test_input2'] = Signal(intbv(0)[10:])
         arg_types['test_input2'] = 'output'
 
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, identity_factory, identity_factory, args, arg_types)
 
         self.assertTrue(
@@ -512,7 +629,7 @@ class CosimulationTestMixin(object):
 
         custom_sources = [
             (random_source, (test_input, clock, reset), {'seed':seed})]
-        _, ref_results = self.construct_simulate_and_munge(
+        _, ref_results = self.construct_and_simulate(
             sim_cycles, self.identity_factory, self.identity_factory,
             self.default_args, self.default_arg_types,
             custom_sources=custom_sources)
@@ -522,7 +639,7 @@ class CosimulationTestMixin(object):
 
         custom_sources = [
             (random_source, (test_input, clock, reset), {'seed':seed})]
-        _, ref_results2 = self.construct_simulate_and_munge(
+        _, ref_results2 = self.construct_and_simulate(
             sim_cycles, self.identity_factory, self.identity_factory,
             self.default_args, self.default_arg_types,
             custom_sources=custom_sources)
@@ -548,7 +665,7 @@ class CosimulationTestMixin(object):
 
         self.assertRaisesRegex(BlockError, 'The dut factory returned an '
                                'invalid object',
-                               self.construct_simulate_and_munge, 30,
+                               self.construct_and_simulate, 30,
                                none_factory, self.identity_factory,
                                self.default_args, self.default_arg_types)
 
@@ -566,7 +683,7 @@ class CosimulationTestMixin(object):
 
         self.assertRaisesRegex(BlockError, 'The ref factory returned an '
                                'invalid object',
-                               self.construct_simulate_and_munge, 30,
+                               self.construct_and_simulate, 30,
                                self.identity_factory, none_factory,
                                self.default_args, self.default_arg_types)
 
@@ -612,7 +729,7 @@ class CosimulationTestMixin(object):
 
         sim_cycles = 31
 
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, identity_factory, identity_factory,
             args, self.default_arg_types)
 
@@ -691,7 +808,7 @@ class CosimulationTestMixin(object):
 
         sim_cycles = 31
 
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, identity_factory, identity_factory,
             args, self.default_arg_types)
 
@@ -767,7 +884,7 @@ class CosimulationTestMixin(object):
 
         sim_cycles = 31
 
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, identity_factory, identity_factory,
             args, arg_types)
 
@@ -816,7 +933,7 @@ class CosimulationTestMixin(object):
 
         sim_cycles = 31
 
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, identity_factory, identity_factory,
             args, self.default_arg_types)
 
@@ -861,7 +978,7 @@ class CosimulationTestMixin(object):
         '''
         self.assertRaisesRegex(
             ValueError, 'Invalid argument or argument types',
-            self.construct_simulate_and_munge, 30,
+            self.construct_and_simulate, 30,
             self.identity_factory, self.identity_factory, self.default_args,
             {'test_input': 'custom', 'test_output': 'custom', 'reset': 'INVALID',
              'clock': 'custom'})
@@ -874,7 +991,7 @@ class CosimulationTestMixin(object):
 
         self.assertRaisesRegex(
             ValueError, 'Invalid argument or argument types',
-            self.construct_simulate_and_munge, 30,
+            self.construct_and_simulate, 30,
             self.identity_factory, self.identity_factory, self.default_args,
             {'test_input': 'custom', 'test_output': {'a': 'INVALID'},
              'reset': 'custom_reset', 'clock': 'custom'})
@@ -888,12 +1005,12 @@ class CosimulationTestMixin(object):
                 self.a = Signal(intbv(0, min=-1000, max=1000))
 
         self.default_args['test_output'] = Interface()
-
         self.assertRaisesRegex(
             KeyError, 'Arg type dict references a non-existant signal',
-            self.construct_simulate_and_munge, 30,
+            self.construct_and_simulate, 30,
             self.identity_factory, self.identity_factory, self.default_args,
-            {'test_input': 'custom', 'test_output': {'a': 'output', 'b': 'output'},
+            {'test_input': 'custom',
+             'test_output': {'a': 'output', 'b': 'output'},
              'reset': 'custom_reset', 'clock': 'custom'})
 
     def test_interfaces_type_from_dict(self):
@@ -949,7 +1066,7 @@ class CosimulationTestMixin(object):
 
         sim_cycles = 31
 
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, identity_factory, identity_factory,
             args, arg_types)
 
@@ -1045,7 +1162,7 @@ class CosimulationTestMixin(object):
 
         sim_cycles = 31
 
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, identity_factory, identity_factory,
             args, arg_types)
 
@@ -1088,7 +1205,7 @@ class CosimulationTestMixin(object):
         # Set up the interface types
         arg_types['test_input'] = {'a': 'random', 'reset': 'init_reset'}
 
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, identity_factory, identity_factory,
             args, arg_types)
 
@@ -1098,7 +1215,7 @@ class CosimulationTestMixin(object):
         # Also test the custom reset
         arg_types['test_input'] = {'a': 'random', 'reset': 'custom_reset'}
 
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, identity_factory, identity_factory,
             args, arg_types)
 
@@ -1122,7 +1239,7 @@ class CosimulationTestMixin(object):
 
 
         sim_cycles = 20
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, self.identity_factory, flipper_factory,
             self.default_args, self.default_arg_types)
 
@@ -1188,7 +1305,7 @@ class CosimulationTestMixin(object):
 
         custom_source = (stopper, (self.default_args['clock'],), {})
 
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, self.identity_factory, self.identity_factory,
             self.default_args, self.default_arg_types,
             custom_sources=[custom_source])
@@ -1222,7 +1339,7 @@ class CosimulationTestMixin(object):
 
         custom_source = (stopper, (self.default_args['clock'],), {})
 
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, self.identity_factory, self.identity_factory,
             self.default_args, self.default_arg_types,
             custom_sources=[custom_source])
@@ -1251,23 +1368,6 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         return test_obj.cosimulate(sim_cycles)
 
 
-    def construct_simulate_and_munge(
-        self, sim_cycles, dut_factory, ref_factory, args, arg_types,
-        **kwargs):
-
-        dut_outputs, ref_outputs = self.construct_and_simulate(
-            sim_cycles, dut_factory, ref_factory, args, arg_types, **kwargs)
-
-        for each in arg_types:
-
-            if dut_outputs is not None:
-                dut_outputs[each] = self.results_munger(dut_outputs[each])
-
-            if ref_outputs is not None:
-                ref_outputs[each] = self.results_munger(ref_outputs[each])
-
-        return dut_outputs, ref_outputs
-
     def test_dut_factory_is_None(self):
         '''It should be possible to pass None as the dut factory.
 
@@ -1280,7 +1380,7 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         (instead, None should returned).
         '''
         sim_cycles = 20
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, None, self.identity_factory, self.default_args,
             {'test_input': 'custom', 'test_output': 'output',
              'reset': 'init_reset', 'clock': 'clock'})
@@ -1390,15 +1490,13 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         test_obj = SynchronousTest(dut, dut, args, arg_types)
 
         tmp_dir = tempfile.mkdtemp()
-        temp_file = os.path.join(tmp_dir, 'test_file')
-
         output_file = os.path.join(tmp_dir, 'dut_convertible_top.vhd')
 
         test_obj.cosimulate(simulated_input_cycles)
 
         try:
 
-            top = test_obj.dut_convertible_top(temp_file)
+            top = test_obj.dut_convertible_top(tmp_dir)
             top.convert(hdl='VHDL', path=tmp_dir)
 
             self.assertTrue(os.path.exists(output_file))
@@ -1438,14 +1536,13 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         test_obj = SynchronousTest(dut, dut, args, arg_types)
 
         tmp_dir = tempfile.mkdtemp()
-        temp_file = os.path.join(tmp_dir, 'test_file')
 
         output_file = os.path.join(tmp_dir, 'dut_convertible_top.vhd')
 
         test_obj.cosimulate(simulated_input_cycles)
 
         try:
-            top = test_obj.dut_convertible_top(temp_file)
+            top = test_obj.dut_convertible_top(tmp_dir)
             top.convert(hdl='VHDL', path=tmp_dir)
 
             self.assertTrue(os.path.exists(output_file))
@@ -1495,14 +1592,13 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         test_obj = SynchronousTest(dut, dut, args, arg_types)
 
         tmp_dir = tempfile.mkdtemp()
-        temp_file = os.path.join(tmp_dir, 'test_file')
 
         output_file = os.path.join(tmp_dir, 'dut_convertible_top.vhd')
 
         test_obj.cosimulate(simulated_input_cycles)
 
         try:
-            top = test_obj.dut_convertible_top(temp_file)
+            top = test_obj.dut_convertible_top(tmp_dir)
             top.convert(hdl='VHDL', path=tmp_dir)
 
             self.assertTrue(os.path.exists(output_file))
@@ -1564,14 +1660,13 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         test_obj = SynchronousTest(dut, dut, args, arg_types)
 
         tmp_dir = tempfile.mkdtemp()
-        temp_file = os.path.join(tmp_dir, 'test_file')
 
         output_file = os.path.join(tmp_dir, 'dut_convertible_top.vhd')
 
         test_obj.cosimulate(simulated_input_cycles)
 
         try:
-            top = test_obj.dut_convertible_top(temp_file)
+            top = test_obj.dut_convertible_top(tmp_dir)
             top.convert(hdl='VHDL', path=tmp_dir)
 
             self.assertTrue(os.path.exists(output_file))
@@ -1613,7 +1708,7 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
              self.default_args['clock']), {}]
 
         sim_cycles = 20
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, useless_factory, self.identity_factory,
             self.default_args,
             {'test_input': 'custom', 'test_output': 'output',
@@ -1656,14 +1751,13 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         test_obj = SynchronousTest(dut, dut, args, arg_types)
 
         tmp_dir = tempfile.mkdtemp()
-        temp_file = os.path.join(tmp_dir, 'test_file')
 
         output_file = os.path.join(tmp_dir, 'dut_convertible_top.vhd')
 
         test_obj.cosimulate(sim_cycles)
 
         try:
-            top = test_obj.dut_convertible_top(temp_file)
+            top = test_obj.dut_convertible_top(tmp_dir)
             top.convert(hdl='VHDL', path=tmp_dir)
 
             self.assertTrue(os.path.exists(output_file))
@@ -1688,22 +1782,6 @@ class TestCosimulationFunction(CosimulationTestMixin, TestCase):
         return myhdl_cosimulation(
             sim_cycles, dut_factory, ref_factory, args, arg_types, **kwargs)
 
-    def construct_simulate_and_munge(
-        self, sim_cycles, dut_factory, ref_factory, args, arg_types,
-        **kwargs):
-
-        dut_outputs, ref_outputs = self.construct_and_simulate(
-            sim_cycles, dut_factory, ref_factory, args, arg_types, **kwargs)
-
-        for each in arg_types:
-            if dut_outputs is not None:
-                dut_outputs[each] = self.results_munger(dut_outputs[each])
-
-            if ref_outputs is not None:
-                ref_outputs[each] = self.results_munger(ref_outputs[each])
-
-        return dut_outputs, ref_outputs
-
     def test_dut_factory_is_None(self):
         '''It should be possible to pass None as the dut factory.
 
@@ -1716,7 +1794,7 @@ class TestCosimulationFunction(CosimulationTestMixin, TestCase):
         (instead, None should returned).
         '''
         sim_cycles = 20
-        dut_results, ref_results = self.construct_simulate_and_munge(
+        dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, None, self.identity_factory, self.default_args,
             {'test_input': 'custom', 'test_output': 'output',
              'reset': 'init_reset', 'clock': 'clock'})

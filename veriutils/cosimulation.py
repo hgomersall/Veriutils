@@ -1,4 +1,5 @@
 from .hdl_blocks import *
+from .axi import AxiStreamSlaveBFM
 from . import VIVADO_EXECUTABLE
 
 from myhdl import *
@@ -146,6 +147,145 @@ end process write_to_file;
 
     return _dummy_file_writer
 
+@block
+def axi_stream_file_writer(
+    clock, axi_stream_interface, axi_writer_suffix, filename):
+
+    vhdl_signal_str_write_list = []
+    vhdl_name_str_write_list = []
+
+    verilog_signal_str_write_list = []
+    verilog_name_str_write_list = []
+
+    locals()['signal_TVALID'] = axi_stream_interface.TVALID
+    locals()['signal_TVALID'].read = True
+
+    locals()['signal_TREADY'] = axi_stream_interface.TREADY
+    locals()['signal_TREADY'].driven = 'reg'
+
+    signal_names = ('TDATA', 'TLAST', 'TKEEP', 'TSTRB')
+
+    for each_signal_name in signal_names:
+        try:
+            each_signal = getattr(axi_stream_interface, each_signal_name)
+        except AttributeError:
+            # Attribute not available, so ignore it.
+            continue
+
+        locals()['signal_' + each_signal_name] = each_signal
+        locals()['signal_' + each_signal_name].read = True
+
+        if signal_names is None:
+            vhdl_name_str_write_list.append(
+                'write(output_line, string\'(\"$signal_%s\"));' %
+                each_signal_name)
+            verilog_name_str_write_list.append(
+                '$$fwrite(output_file, \"$signal_%s\");' % each_signal_name)
+        else:
+            # We assign the signal headers from the signal names
+            vhdl_name_str_write_list.append(
+                'write(output_line, string\'(\"%s\"));' % each_signal_name)
+            verilog_name_str_write_list.append(
+                '$$fwrite(output_file, \"%s\");' % each_signal_name)
+
+
+        if len(each_signal) == 1:
+            vhdl_signal_str_write_list.append(
+                'write(output_line, std_logic($signal_%s));' %
+                each_signal_name)
+        else:
+            vhdl_signal_str_write_list.append(
+                'write(output_line, std_logic_vector($signal_%s));' %
+                each_signal_name)
+
+        verilog_signal_str_write_list.append(
+            '$$fwrite(output_file, \"%%b\", $signal_%s);' % each_signal_name)
+
+    vhdl_name_indent = ' ' * 16
+    vhdl_name_str_write = (
+        ('\n%swrite(output_line, string\'(\",\"));\n%s' %
+         (vhdl_name_indent, vhdl_name_indent))
+        .join(vhdl_name_str_write_list))
+
+    verilog_name_indent = ' ' * 4
+    verilog_name_str_write = (
+        ('\n%s$$fwrite(output_file, \",\");\n%s' %
+         (verilog_name_indent, verilog_name_indent))
+        .join(verilog_name_str_write_list))
+
+    vhdl_signal_indent = ' ' * 12
+    vhdl_signal_str_write = (
+        ('\n%swrite(output_line, string\'(\",\"));\n%s' %
+         (vhdl_signal_indent, vhdl_signal_indent))
+        .join(vhdl_signal_str_write_list))
+
+    verilog_signal_indent = ' ' * 16
+    verilog_signal_str_write = (
+        ('\n%s$$fwrite(output_file, \",\");\n%s' %
+         (verilog_signal_indent, verilog_signal_indent))
+        .join(verilog_signal_str_write_list))
+
+    axi_stream_file_writer.verilog_code = '''
+initial begin: write_to_file_%s
+    integer output_file;
+
+    output_file = $$fopen("%s", "w");
+
+    %s
+    $$fwrite(output_file, "\\n");
+    $$fflush(output_file);
+
+    while (1'b1) begin
+        @(posedge $clock) begin
+            $signal_TREADY = 1;
+
+            if ($signal_TREADY & $signal_TVALID) begin
+                %s
+                $$fwrite(output_file, "\\n");
+                $$fflush(output_file);
+            end
+        end
+    end
+end
+    ''' % (axi_writer_suffix, filename, verilog_name_str_write,
+           verilog_signal_str_write,)
+
+    axi_stream_file_writer.vhdl_code = '''
+write_to_file_%s: process ($clock) is
+
+    file output_file : TEXT open WRITE_MODE is "%s";
+    variable output_line : LINE;
+    variable first_line_to_print : boolean := true;
+begin
+    if rising_edge($clock) then
+        $signal_TREADY <= '1';
+
+        if $signal_TREADY='1' and $signal_TVALID='1' then
+            if first_line_to_print then
+                %s
+                writeLine(output_file, output_line);
+                first_line_to_print := false;
+            end if;
+            %s
+            writeline(output_file, output_line);
+        end if;
+    end if;
+end process write_to_file_%s;
+    ''' % (axi_writer_suffix, filename, vhdl_name_str_write,
+           vhdl_signal_str_write, axi_writer_suffix)
+
+    @always(clock.posedge)
+    def _dummy_file_writer():
+        # It's necessary to access all the signals in the right way inside
+        # the dummy writer in order that the used signals can be inferred
+        # correctly.
+        locals()['TREADY'].next = 1
+        if locals()['TREADY'] and locals()['TVALID']:
+            for signal_name in signal_names:
+                print(locals()[signal_name])
+
+    return _dummy_file_writer
+
 def _expand_to_signal_list(signal_obj, depth=0):
     '''Takes a signal object - either a signal or an interface, and returns
     a list of all the signals therein contained, along with a corresponding
@@ -284,12 +424,13 @@ def _create_flattened_args(args, arg_types):
             attribute_name_list, arg_types[each_signal_name])
 
         if len(_signal_list) == 1 and len(attribute_name_list) == 0:
+            # A normal signal
             flattened_args[each_signal_name] = _signal_list[0]
             flattened_arg_types[each_signal_name] = (
                 arg_types[each_signal_name])
 
         elif len(_signal_list) > 0 and len(attribute_name_list) == 0:
-
+            # The signal list case
             name_idx = 0
             # sig_n is the index in a list with non-signals missing.
             sig_n = 0
@@ -317,6 +458,7 @@ def _create_flattened_args(args, arg_types):
                 sig_n += 1
 
         else:
+            # The interface case
             name_idx = 0
             sig_n = 0
             while True:
@@ -400,6 +542,9 @@ class SynchronousTest(object):
         * A `'custom'` arg is assumed to be handled elsewhere (say, as a
         constant or handled through a custom_source).
         * `'custom_reset'` is like a `'custom'` arg, but for reset signals.
+        * `'axi_stream_out'` denotes the argument is an AXI interface
+        that should be handled as such. This means the data is packetised
+        and returned in that form in addition to the raw signals.
         * `'non-signal'` denotes an argument that is not a signal or an
         interface (i.e. an argument that is used during construction only).
 
@@ -420,7 +565,8 @@ class SynchronousTest(object):
         '''
 
         valid_arg_types = ('clock', 'init_reset', 'random', 'output',
-                           'custom', 'custom_reset', 'non-signal')
+                           'custom', 'custom_reset', 'axi_stream_out',
+                           'non-signal')
 
         self.period = PERIOD
 
@@ -434,8 +580,9 @@ class SynchronousTest(object):
 
         flattened_types = []
         flattened_signals = []
+        flattened_signal_names = []
 
-        def _arg_checker(signal_collection, types, depth=0):
+        def _arg_checker(signal_collection, types, name_prefix='', depth=0):
 
             if not isinstance(signal_collection, collections.Mapping):
                 # Use the __dict__ attribute of the object
@@ -444,13 +591,18 @@ class SynchronousTest(object):
                 signal_objs = signal_collection
 
             for name in types:
+                if len(name_prefix) > 0:
+                    resolved_name = name_prefix + '.' + name
+                else:
+                    resolved_name = name
+
                 if (isinstance(signal_objs[name], myhdl._Signal._Signal) and
                     types[name] not in valid_arg_types):
 
                     raise ValueError('Invalid argument or argument types:'
                                      ' All the signals in the hierarchy '
-                                     'should be one of type: %s' %
-                                     (', '.join(valid_arg_types),))
+                                     'should be one of type: %s (signal %s)' %
+                                     (', '.join(valid_arg_types), name))
 
                 elif not isinstance(signal_objs[name], myhdl._Signal._Signal):
 
@@ -463,18 +615,23 @@ class SynchronousTest(object):
 
                         # This is ok (we can assign a hierarchy to be of
                         # one type
+                        flattened_signal_names.append(resolved_name)
                         flattened_types.append(types[name])
                         flattened_signals.append(signal_objs[name])
 
                     else:
                         try:
-                            _arg_checker(signal_objs[name], types[name])
-                        except KeyError:
-                            raise KeyError('Arg type dict references a '
-                                           'non-existant signal')
+                            _arg_checker(
+                                signal_objs[name], types[name],
+                                name_prefix=resolved_name)
+                        except KeyError as e:
+                            raise KeyError(
+                                'Arg type dict references a non-existant '
+                                'signal or signal type: '
+                                '%s (failure handling \'%s\')' % (e, name))
 
                 else:
-
+                    flattened_signal_names.append(resolved_name)
                     flattened_types.append(types[name])
                     flattened_signals.append(signal_objs[name])
 
@@ -517,6 +674,7 @@ class SynchronousTest(object):
             # (though it won't be driven)
             self.reset = ResetSignal(False, active=True, async=False)
             self.init_reset_factory = ()
+
 
         # Deal with random values
         # Create the random sources.
@@ -567,6 +725,11 @@ class SynchronousTest(object):
                             each for each in signal_dict[name]]
                     else:
                         output_dict[name] = copy_signal(signal_dict[name])
+
+                elif types[name] == 'axi_stream_out':
+                    # We copy all the axi stream signals. It should be an
+                    # interface, so we recurse.
+                    output_dict[name] = copy_signal(signal_dict[name])
 
                 elif types[name] == 'non-signal':
                     # Do a non-deep copy. If your code is messing with
@@ -628,6 +791,34 @@ class SynchronousTest(object):
             ref_outputs[signal] = ref_arg_output
             self.output_recorder_factories.append(ref_recorder)
 
+        # Now create the axi sinks
+        self.axi_stream_out_ref_bfms = {}
+        if dut_factory is not None:
+            self.axi_stream_out_dut_bfms = {}
+
+        else:
+            self.axi_stream_out_dut_bfms = None
+
+        self.axi_stream_out_bfm_sink_factories = []
+        self.axi_stream_out_bfm_sink_interface_names = []
+
+        for each_signal_obj, each_type, each_name in zip(
+            flattened_signals, flattened_types, flattened_signal_names):
+
+            if each_type == 'axi_stream_out':
+
+                ref_bfm = AxiStreamSlaveBFM()
+                self.axi_stream_out_ref_bfms[each_name] = ref_bfm
+                self.axi_stream_out_bfm_sink_factories.append(
+                    (ref_bfm.model, (self.clock, each_signal_obj), {}))
+
+                self.axi_stream_out_bfm_sink_interface_names.append(each_name)
+
+                if dut_factory is not None:
+                    dut_bfm = AxiStreamSlaveBFM()
+                    self.axi_stream_out_dut_bfms[each_name] = dut_bfm
+                    self.axi_stream_out_bfm_sink_factories.append(
+                        (dut_bfm.model, (self.clock, each_signal_obj), {}))
 
         self.test_factories = [(ref_factory, (), self.ref_args)]
 
@@ -735,6 +926,10 @@ class SynchronousTest(object):
                 factory(*args, **kwargs) for factory, args, kwargs in
                 self.custom_sources]
 
+            axi_sources = [
+                factory(*args, **kwargs) for factory, args, kwargs in
+                self.axi_stream_out_bfm_sink_factories]
+
             clockgen = self.clockgen_factory[0](
                 *self.clockgen_factory[1], **self.clockgen_factory[2])
 
@@ -745,7 +940,7 @@ class SynchronousTest(object):
                 init_reset = []
 
             return [random_sources, output_recorders, test_instances,
-                    custom_sources, [clockgen, init_reset]]
+                    custom_sources, axi_sources, [clockgen, init_reset]]
 
         top_level_block = top()
 
@@ -765,10 +960,44 @@ class SynchronousTest(object):
         top_level_block.quit_sim()
 
         self._simulator_run = True
+
+        def axi_interface_from_name(name, output_set):
+            object_path = name.split('.')
+            current_object = output_set
+
+            for level_name in object_path:
+                current_object = current_object[level_name]
+
+            return current_object
+
+        # Finally write the AXI outputs as necessary
+        # Currently only works for a top level interface (though the
+        # code is partially implemented for the more general case)
+        for each_axi_interface in self.axi_stream_out_ref_bfms:
+
+            ref_axi_signals = axi_interface_from_name(
+                each_axi_interface, self.outputs[1])
+            ref_bfm = self.axi_stream_out_ref_bfms[each_axi_interface]
+
+            self.outputs[1][each_axi_interface] = {
+                'signals': ref_axi_signals,
+                'packets': ref_bfm.completed_packets}
+
+            if self.axi_stream_out_dut_bfms is not None:
+                dut_axi_signals = axi_interface_from_name(
+                    each_axi_interface, self.outputs[0])
+                dut_bfm = self.axi_stream_out_dut_bfms[each_axi_interface]
+
+                self.outputs[0][each_axi_interface] = {
+                    'signals': dut_axi_signals,
+                    'packets': dut_bfm.completed_packets}
+
         return self.outputs
 
     @block
-    def dut_convertible_top(self, signal_output_file):
+    def dut_convertible_top(
+        self, output_path, signal_output_filename='signal_outputs',
+        axi_stream_packets_filename_prefix='axi_stream_out'):
         '''Acts as a top-level MyHDL method, implementing a portable,
         convertible version of the SynchronousTest object wrapping the
         device under test.
@@ -805,7 +1034,7 @@ class SynchronousTest(object):
             '''A function that recurses through the a sample recording to
             extract the correct one. It takes as its input a sample recording
             (i.e. the recording at one time instant), and the signal
-            hierachy in the form returned from _expand_to_signal_list.
+            hierarchy in the form returned from _expand_to_signal_list.
             '''
             this_level_name, next_hierarchy = hierarchy
 
@@ -846,9 +1075,14 @@ class SynchronousTest(object):
                 top_level_name, hierarchy = (
                     signal_object_lookup[each_signal_name])
 
-                this_ref_output = [
-                    _extract_recorded_sample(each_sample, hierarchy) for
-                    each_sample in ref_outputs[top_level_name]]
+                if flattened_arg_types[each_signal_name] == 'axi_stream_out':
+                    this_ref_output = [
+                        _extract_recorded_sample(each_sample, hierarchy) for
+                        each_sample in ref_outputs[top_level_name]['signals']]
+                else:
+                    this_ref_output = [
+                        _extract_recorded_sample(each_sample, hierarchy) for
+                        each_sample in ref_outputs[top_level_name]]
 
                 flattened_ref_outputs[each_signal_name] = this_ref_output
 
@@ -889,6 +1123,12 @@ class SynchronousTest(object):
                 instances.append(lut_signal_driver(reset, drive_list, clock))
                 flattened_dut_args[each_signal_name] = reset
 
+            elif flattened_arg_types[each_signal_name] == 'axi_stream_out':
+                # We record all the axi signals
+                locals()[each_signal_name] = each_signal
+                recorded_local_name_list.append(each_signal_name)
+                flattened_dut_args[each_signal_name] = (
+                    locals()[each_signal_name])
             else:
                 # This should be played back too
                 drive_list = tuple(flattened_ref_outputs[each_signal_name])
@@ -973,10 +1213,28 @@ class SynchronousTest(object):
                         type_str,
                         _turn_signal_hierarchy_into_name(signal_hierarchy)))
 
+        signal_output_file = os.path.join(output_path, signal_output_filename)
         # Setup the output writer and add it to the instances list
         instances.append(file_writer(
             signal_output_file, recorded_list, clock, recorded_list_names))
 
+        # Now set up the AXI stream file writers. There is one file per axi
+        # writer.
+        for n, (axi_stream_out_bfm_factory, axi_interface_name) in (
+            enumerate(zip(self.axi_stream_out_bfm_sink_factories,
+                          self.axi_stream_out_bfm_sink_interface_names))):
+
+            axi_stream_file_writer_filename = os.path.join(
+                axi_stream_packets_filename_prefix + '_' + axi_interface_name)
+
+            axi_stream_file_writer_args = list(axi_stream_out_bfm_factory[1])
+            axi_stream_file_writer_args.append(
+                str(n) + '_' + axi_interface_name)
+            axi_stream_file_writer_args.append(
+                os.path.join(output_path, axi_stream_file_writer_filename))
+
+            instances.append(
+                axi_stream_file_writer(*axi_stream_file_writer_args))
 
         # unflatten dut_args so it can be passed to the dut factory
         dut_args = {}
