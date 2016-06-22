@@ -243,6 +243,11 @@ class AxiStreamSlaveBFM(object):
 
         The MyHDL model is instantiated using the ``model`` method.
         '''
+        self.reset()
+
+    def reset(self):
+        '''Clears the current set of completed and current packets.
+        '''
         self._completed_packets = []
         self._current_packet = []
 
@@ -278,7 +283,8 @@ class AxiStreamSlaveBFM(object):
         def model_inst():
 
             if interface.TVALID and interface.TREADY:
-                self._current_packet.append(copy.copy(interface.TDATA._val))
+                self._current_packet.append(
+                    copy.copy(int(interface.TDATA._val)))
 
                 if interface.TLAST:
                     # End of a packet, so copy the current packet into

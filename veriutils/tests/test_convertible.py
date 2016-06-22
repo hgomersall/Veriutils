@@ -33,7 +33,7 @@ def _conversion_test(
 
         convertible_top = sim_object.dut_convertible_top(tmp_dir)
 
-        convertible_top.convert(hdl='VHDL', path=tmp_dir)
+        convertible_top.convert(hdl=target_language, path=tmp_dir)
 
     finally:
         shutil.rmtree(tmp_dir)

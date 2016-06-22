@@ -303,6 +303,7 @@ class CosimulationTestMixin(object):
         should be the raw signal outputs.
         '''
         self.clock = Signal(bool(1))
+        self.test_in = AxiStreamInterface()
         self.test_out = AxiStreamInterface()
 
         max_packet_length = 20
@@ -322,19 +323,32 @@ class CosimulationTestMixin(object):
              in range(random.randrange(0, max_packet_length))] for n
             in range(random.randrange(0, max_new_packets))]
 
-        self.default_args = {'axi_interface': self.test_out,
-                             'clock': self.clock,
-                             'packets': packet_list}
+        self.default_args = {'axi_interface_in': self.test_in,
+                             'axi_interface_out': self.test_out,
+                             'clock': self.clock}
 
-        self.default_arg_types = {'axi_interface': 'axi_stream_out',
-                                  'clock': 'clock',
-                                  'packets': 'non-signal'}
+        self.default_arg_types = {
+            'axi_interface_in': {'TDATA': 'custom',
+                                 'TVALID': 'custom',
+                                 'TREADY': 'output',
+                                 'TLAST': 'custom'},
+            'axi_interface_out': 'axi_stream_out',
+            'clock': 'clock'}
+
+        @block
+        def axi_identity(clock, axi_interface_in, axi_interface_out):
+
+            @always_comb
+            def assign_signals():
+                axi_interface_in.TREADY.next = axi_interface_out.TREADY
+                axi_interface_out.TVALID.next = axi_interface_in.TVALID
+                axi_interface_out.TLAST.next = axi_interface_in.TLAST
+                axi_interface_out.TDATA.next = axi_interface_in.TDATA
+
+            return assign_signals
+
 
         sim_cycles = sum(len(packet) for packet in packet_list) + 1
-
-        dut_results, ref_results = self.construct_and_simulate(
-            sim_cycles, axi_master_playback, axi_master_playback,
-            self.default_args, self.default_arg_types)
 
         None_trimmed_packet_list = [
             [val for val in packet if val is not None] for packet in
@@ -343,35 +357,37 @@ class CosimulationTestMixin(object):
         trimmed_packets = [
             packet for packet in None_trimmed_packet_list if len(packet) > 0]
 
-        self.assertEqual(
-            ref_results['axi_interface']['packets'], trimmed_packets)
+        master_bfm = AxiStreamMasterBFM()
+        custom_sources = [(master_bfm.model, (self.clock, self.test_in), {})]
+
+        # Calling several times should work just fine
+        master_bfm.add_data(packet_list)
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, axi_identity, axi_identity,
+            self.default_args, self.default_arg_types,
+            custom_sources=custom_sources)
 
         self.assertEqual(
-            dut_results['axi_interface']['packets'], trimmed_packets)
+            ref_results['axi_interface_out']['packets'], trimmed_packets)
 
-    @unittest.expectedFailure
-    def test_axi_stream_out_as_sub_interface(self):
-        '''It should be possible to set part of an interface to type
-        ``axi_stream_out``.
+        self.assertEqual(
+            dut_results['axi_interface_out']['packets'], trimmed_packets)
 
-        In this case in which an interface has as an attribute an AXI
-        interface, then the AXI interface can be set as an `axi_stream_out`.
+    def test_axi_stream_in_argument(self):
+        '''It should be possible to set an argument to `axi_stream_in`, in
+        which case it is required that argument is an interface providing a
+        suitable subset of the AXI4 Stream interface.
+
+        Though it should not be enforced, an `axi_stream_in` interface
+        should be driven through a user defined `custom_source` block.
         '''
-        # FIXME currently because the recorder sink only supports one level
-        # of interface, this test will fail.
-        # Also, the code that sets the output signals needs correcting for
-        # multiple layers.
         self.clock = Signal(bool(1))
-
-        class MetaAxiInterface(object):
-            def __init__(self):
-                self.axi_interface = AxiStreamInterface()
-
-        self.test_out = MetaAxiInterface()
+        self.test_in = AxiStreamInterface()
+        self.test_out = AxiStreamInterface()
 
         max_packet_length = 20
         max_new_packets = 50
-        max_val = 2**(8 * self.test_out.axi_interface.bus_width)
+        max_val = 2**(8 * self.test_out.bus_width) - 1
 
         def val_gen():
             # Generates Nones about half the time probability
@@ -381,30 +397,57 @@ class CosimulationTestMixin(object):
             else:
                 return val
 
-        @block
-        def source_wrapper(clock, meta_interface, packets):
-            return axi_master_playback(
-                clock, meta_interface.axi_interface, packets)
-
         packet_list = [
             [val_gen() for m
-             in range(random.randrange(0, max_packet_length))] for n
-            in range(random.randrange(0, max_new_packets))]
+             in range(random.randrange(3, max_packet_length))] for n
+            in range(random.randrange(3, max_new_packets))]
 
-        self.default_args = {'meta_interface': self.test_out,
-                             'clock': self.clock,
-                             'packets': packet_list}
+        self.default_args = {'axi_interface_in': self.test_in,
+                             'axi_interface_out': self.test_out,
+                             'clock': self.clock}
 
-        self.default_arg_types = {
-            'meta_interface': {'axi_interface': 'axi_stream_out'},
-            'clock': 'clock',
-            'packets': 'non-signal'}
+        self.default_arg_types = {'axi_interface_in': 'axi_stream_in',
+                                  'axi_interface_out': 'axi_stream_out',
+                                  'clock': 'clock'}
 
-        sim_cycles = sum(len(packet) for packet in packet_list) + 1
+        @block
+        def axi_identity(clock, axi_interface_in, axi_interface_out):
 
-        dut_results, ref_results = self.construct_and_simulate(
-            sim_cycles, source_wrapper, source_wrapper,
-            self.default_args, self.default_arg_types)
+            @always_comb
+            def assign_signals():
+                axi_interface_in.TREADY.next = axi_interface_out.TREADY
+                axi_interface_out.TVALID.next = axi_interface_in.TVALID
+                axi_interface_out.TLAST.next = axi_interface_in.TLAST
+                axi_interface_out.TDATA.next = axi_interface_in.TDATA
+
+            return assign_signals
+
+        # A test dut block that munges the signal and delays it by a cycle
+        @block
+        def axi_offset_increment(clock, axi_interface_in, axi_interface_out):
+
+            internal_TVALID = Signal(False)
+            internal_TDATA = Signal(intbv(0)[len(axi_interface_in.TDATA):])
+            internal_TLAST = Signal(False)
+
+            # This works because axi_interface_out.TREADY is always True.
+            @always(clock.posedge)
+            def assign_signals():
+
+                internal_TVALID.next = axi_interface_in.TVALID
+                internal_TDATA.next = axi_interface_in.TDATA
+                internal_TLAST.next = axi_interface_in.TLAST
+
+                axi_interface_in.TREADY.next = True
+                axi_interface_out.TVALID.next = internal_TVALID
+                axi_interface_out.TLAST.next = internal_TLAST
+                axi_interface_out.TDATA.next = internal_TDATA + 1
+
+            return assign_signals
+
+        master_bfm = AxiStreamMasterBFM()
+        custom_sources = [(master_bfm.model, (self.clock, self.test_in), {})]
+
 
         None_trimmed_packet_list = [
             [val for val in packet if val is not None] for packet in
@@ -413,24 +456,24 @@ class CosimulationTestMixin(object):
         trimmed_packets = [
             packet for packet in None_trimmed_packet_list if len(packet) > 0]
 
-        self.assertEqual(
-            ref_results['meta_interface']['axi_interface']['axi_packets'],
-            trimmed_packets)
+        incremented_trimmed_packets = [
+            [val + 1 for val in packet] for packet in trimmed_packets]
+
+        sim_cycles = sum(len(packet) for packet in packet_list) + 3
+
+        master_bfm.add_data(packet_list)
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, axi_offset_increment, axi_identity,
+            self.default_args, self.default_arg_types,
+            custom_sources=custom_sources)
 
         self.assertEqual(
-            dut_results['meta_interface']['axi_interface']['axi_packets'],
-            trimmed_packets)
+            ref_results['axi_interface_out']['packets'], trimmed_packets)
 
-    @unittest.expectedFailure
-    def test_axi_stream_in_argument(self):
-        '''It should be possible to set an argument to `axi_stream_in`, in
-        which case it is required that argument is an interface providing a
-        suitable subset of the AXI4 Stream interface.
-
-        Though it should not be enforced, an `axi_stream_in` interface
-        should be driven through a user defined `custom_source` block.
-        '''
-        raise NotImplementedError
+        self.assertEqual(
+            dut_results['axi_interface_out']['packets'],
+            incremented_trimmed_packets)
 
 
     def test_all_argument_types_and_args_have_same_keys(self):
@@ -1070,12 +1113,13 @@ class CosimulationTestMixin(object):
             sim_cycles, identity_factory, identity_factory,
             args, arg_types)
 
-        # The inputs should be the same signal
-        self.assertIs(signals[0]['test_output.b'], signals[1]['test_output.b'])
-        self.assertIs(signals[0]['test_input.a'], signals[1]['test_input.a'])
-
-        # The outputs should not be
-        self.assertIsNot(signals[0]['test_output.a'], signals[1]['test_output.a'])
+        # Neither the inputs nor the outputs should be the same signal
+        self.assertIsNot(signals[0]['test_output.b'],
+                         signals[1]['test_output.b'])
+        self.assertIsNot(signals[0]['test_input.a'],
+                         signals[1]['test_input.a'])
+        self.assertIsNot(signals[0]['test_output.a'],
+                         signals[1]['test_output.a'])
         self.assertIsNot(signals[0]['test_input.b'],
                          signals[1]['test_input.b'])
 
@@ -1362,11 +1406,92 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         self, sim_cycles, dut_factory, ref_factory, args, arg_types,
         **kwargs):
 
+        try:
+            vcd_name = kwargs['vcd_name']
+            del kwargs['vcd_name']
+        except KeyError:
+            vcd_name = None
+
         test_obj = SynchronousTest(
             dut_factory, ref_factory, args, arg_types, **kwargs)
 
-        return test_obj.cosimulate(sim_cycles)
+        return test_obj.cosimulate(sim_cycles, vcd_name=vcd_name)
 
+    def test_axi_stream_out_with_multiple_cosimulate_calls(self):
+        '''If multiple calls are made to cosimulate, the signals that are
+        set to be axi_stream_out should not contain outputs from previous
+        calls.
+        '''
+        self.clock = Signal(bool(1))
+        self.test_in = AxiStreamInterface()
+        self.test_out = AxiStreamInterface()
+
+        max_packet_length = 20
+        max_new_packets = 50
+        max_val = 2**(8 * self.test_out.bus_width) - 1
+
+        def val_gen():
+            # Generates Nones about half the time probability
+            val = random.randrange(0, max_val*2)
+            if val >= max_val:
+                return None
+            else:
+                return val
+
+        packet_list = [
+            [val_gen() for m
+             in range(random.randrange(3, max_packet_length))] for n
+            in range(random.randrange(3, max_new_packets))]
+
+        self.default_args = {'axi_interface_in': self.test_in,
+                             'axi_interface_out': self.test_out,
+                             'clock': self.clock}
+
+        self.default_arg_types = {'axi_interface_in': 'axi_stream_in',
+                                  'axi_interface_out': 'axi_stream_out',
+                                  'clock': 'clock'}
+
+        @block
+        def axi_identity(clock, axi_interface_in, axi_interface_out):
+
+            @always_comb
+            def assign_signals():
+                axi_interface_in.TREADY.next = axi_interface_out.TREADY
+                axi_interface_out.TVALID.next = axi_interface_in.TVALID
+                axi_interface_out.TLAST.next = axi_interface_in.TLAST
+                axi_interface_out.TDATA.next = axi_interface_in.TDATA
+
+            return assign_signals
+
+        master_bfm = AxiStreamMasterBFM()
+        custom_sources = [(master_bfm.model, (self.clock, self.test_in), {})]
+
+        None_trimmed_packet_list = [
+            [val for val in packet if val is not None] for packet in
+            packet_list]
+
+        trimmed_packets = [
+            packet for packet in None_trimmed_packet_list if len(packet) > 0]
+
+        incremented_trimmed_packets = [
+            [val + 1 for val in packet] for packet in trimmed_packets]
+
+        sim_cycles = sum(len(packet) for packet in packet_list) + 1
+
+        test_obj = SynchronousTest(axi_identity, axi_identity,
+                                   self.default_args, self.default_arg_types,
+                                   custom_sources=custom_sources)
+
+        for n in range(3):
+            master_bfm.add_data(packet_list)
+
+            dut_results, ref_results = test_obj.cosimulate(sim_cycles)
+
+            self.assertEqual(
+                ref_results['axi_interface_out']['packets'], trimmed_packets)
+
+            self.assertEqual(
+                dut_results['axi_interface_out']['packets'], trimmed_packets)
 
     def test_dut_factory_is_None(self):
         '''It should be possible to pass None as the dut factory.

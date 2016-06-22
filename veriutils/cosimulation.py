@@ -1,5 +1,5 @@
 from .hdl_blocks import *
-from .axi import AxiStreamSlaveBFM
+from .axi import AxiStreamSlaveBFM, axi_stream_buffer, axi_master_playback
 from . import VIVADO_EXECUTABLE
 
 from myhdl import *
@@ -17,6 +17,7 @@ from string import Template
 import csv
 
 import collections
+import random
 
 
 import sys
@@ -505,6 +506,16 @@ def _create_flattened_args(args, arg_types):
     return (non_signal_list, flattened_args, flattened_arg_types,
             signal_object_lookup, lookup_type)
 
+def _signal_from_sigdict_and_name(sigdict, name):
+
+    split_name = name.split('.')
+    sig_obj = sigdict[split_name[0]]
+
+    for attr_name in split_name[1:]:
+        sig_obj = getattr(sig_obj, attr_name)
+
+    return sig_obj
+
 
 class SynchronousTest(object):
 
@@ -542,9 +553,18 @@ class SynchronousTest(object):
         * A `'custom'` arg is assumed to be handled elsewhere (say, as a
         constant or handled through a custom_source).
         * `'custom_reset'` is like a `'custom'` arg, but for reset signals.
-        * `'axi_stream_out'` denotes the argument is an AXI interface
-        that should be handled as such. This means the data is packetised
-        and returned in that form in addition to the raw signals.
+        * `'axi_stream_in'` denotes the argument is an AXI stream input
+        interface. This means the important information is what is contained
+        in the packets of the axi stream rather than the raw signals.
+        It is up to the user to pass a ``custom_source`` that generates
+        the relevant axi signals. It's important to note that unpredictable
+        things might happen if there is feedback into the AXI customs source
+        other than through the AXI stream interface. It is assumed that the
+        custom source that drives the AXI stream interface is independent
+        of the model or other sources.
+        * `'axi_stream_out'` denotes the argument is an AXI stream output
+        interface that should be handled as such. This means the data is
+        packetised and returned in that form in addition to the raw signals.
         * `'non-signal'` denotes an argument that is not a signal or an
         interface (i.e. an argument that is used during construction only).
 
@@ -566,7 +586,7 @@ class SynchronousTest(object):
 
         valid_arg_types = ('clock', 'init_reset', 'random', 'output',
                            'custom', 'custom_reset', 'axi_stream_out',
-                           'non-signal')
+                           'axi_stream_in', 'non-signal')
 
         self.period = PERIOD
 
@@ -676,13 +696,6 @@ class SynchronousTest(object):
             self.init_reset_factory = ()
 
 
-        # Deal with random values
-        # Create the random sources.
-        self.random_source_factories = [
-            (random_source, (each_signal, self.clock, self.reset), {})
-            for each_signal, each_type in
-            zip(flattened_signals, flattened_types) if each_type == 'random']
-
         if custom_sources is None:
             custom_sources = []
 
@@ -715,7 +728,7 @@ class SynchronousTest(object):
             output_dict = signal_dict.copy()
 
             for name in types:
-                if types[name] == 'output':
+                if (types[name] == 'output' or types[name] == 'random'):
                     if isinstance(signal_dict[name], list):
                         # Special case signal lists
                         # Only copy the signals
@@ -726,9 +739,9 @@ class SynchronousTest(object):
                     else:
                         output_dict[name] = copy_signal(signal_dict[name])
 
-                elif types[name] == 'axi_stream_out':
-                    # We copy all the axi stream signals. It should be an
-                    # interface, so we recurse.
+                elif (types[name] == 'axi_stream_out' or
+                      types[name] == 'axi_stream_in'):
+                    # We copy all the axi stream signals.
                     output_dict[name] = copy_signal(signal_dict[name])
 
                 elif types[name] == 'non-signal':
@@ -755,6 +768,28 @@ class SynchronousTest(object):
             return output
 
         self.dut_args = _replicate_signals(self.ref_args, arg_types)
+
+        # Deal with random values
+        # Create the random sources.
+        self.random_source_factories = []
+        for each_signal, each_name, each_type in zip(
+            flattened_signals, flattened_signal_names, flattened_types):
+
+            if each_type == 'random':
+
+                seed = random.randrange(0, 0x5EEDF00D)
+                self.random_source_factories.append(
+                    (random_source,
+                     (each_signal, self.clock, self.reset), {'seed': seed}))
+
+                if dut_factory is not None:
+                    dut_signal = _signal_from_sigdict_and_name(
+                        self.dut_args, each_name)
+                    self.random_source_factories.append(
+                        (random_source,
+                         (dut_signal, self.clock, self.reset),
+                         {'seed': seed}))
+
 
         # Now create the recorder sinks for every signal
         ref_outputs = {}
@@ -793,6 +828,7 @@ class SynchronousTest(object):
 
         # Now create the axi sinks
         self.axi_stream_out_ref_bfms = {}
+        self.axi_stream_in_ref_bfms = {}
         if dut_factory is not None:
             self.axi_stream_out_dut_bfms = {}
 
@@ -802,23 +838,60 @@ class SynchronousTest(object):
         self.axi_stream_out_bfm_sink_factories = []
         self.axi_stream_out_bfm_sink_interface_names = []
 
-        for each_signal_obj, each_type, each_name in zip(
-            flattened_signals, flattened_types, flattened_signal_names):
+        self.axi_stream_in_bfm_sink_factories = []
+        self.axi_stream_in_bfm_sink_interface_names = []
+        self.axi_stream_in_ref_interfaces = {}
+        self.axi_stream_in_buffer_factories = []
+
+        for each_type, each_name in zip(
+            flattened_types, flattened_signal_names):
 
             if each_type == 'axi_stream_out':
+
+                TREADY_probability = 1.0
+
+                ref_axi_signal = self.ref_args[each_name]
 
                 ref_bfm = AxiStreamSlaveBFM()
                 self.axi_stream_out_ref_bfms[each_name] = ref_bfm
                 self.axi_stream_out_bfm_sink_factories.append(
-                    (ref_bfm.model, (self.clock, each_signal_obj), {}))
+                    (ref_bfm.model,
+                     (self.clock, ref_axi_signal, TREADY_probability), {}))
 
                 self.axi_stream_out_bfm_sink_interface_names.append(each_name)
 
                 if dut_factory is not None:
                     dut_bfm = AxiStreamSlaveBFM()
+                    dut_axi_signal = self.dut_args[each_name]
                     self.axi_stream_out_dut_bfms[each_name] = dut_bfm
                     self.axi_stream_out_bfm_sink_factories.append(
-                        (dut_bfm.model, (self.clock, each_signal_obj), {}))
+                        (dut_bfm.model,
+                         (self.clock, dut_axi_signal, TREADY_probability),
+                         {}))
+
+            elif each_type == 'axi_stream_in':
+
+                TREADY_probability = None
+
+                ref_axi_signal = self.ref_args[each_name]
+
+                ref_bfm = AxiStreamSlaveBFM()
+                self.axi_stream_in_ref_bfms[each_name] = ref_bfm
+                self.axi_stream_in_bfm_sink_factories.append(
+                    (ref_bfm.model,
+                     (self.clock, ref_axi_signal, TREADY_probability), {}))
+
+                self.axi_stream_in_bfm_sink_interface_names.append(each_name)
+                self.axi_stream_in_ref_interfaces[each_name] = (
+                        ref_axi_signal)
+
+                if dut_factory is not None:
+                    dut_axi_signal = self.dut_args[each_name]
+
+                    self.axi_stream_in_buffer_factories.append(
+                        (axi_stream_buffer,
+                         (self.clock, ref_axi_signal, dut_axi_signal),
+                         {'passive_sink_mode': True}))
 
         self.test_factories = [(ref_factory, (), self.ref_args)]
 
@@ -854,6 +927,19 @@ class SynchronousTest(object):
          flattened_arg_types, _, _)= (
              _create_flattened_args(self.args, self.arg_types))
 
+        # And also clear the AXI sink BFMs
+        if self.axi_stream_out_ref_bfms is not None:
+            for bfm in self.axi_stream_out_ref_bfms.values():
+                bfm.reset()
+
+        if self.axi_stream_out_dut_bfms is not None:
+            for bfm in self.axi_stream_out_dut_bfms.values():
+                bfm.reset()
+
+        if self.axi_stream_in_ref_bfms is not None:
+            for bfm in self.axi_stream_in_ref_bfms.values():
+                bfm.reset()
+
         for each_signal_obj in flattened_args:
 
             if isinstance(flattened_args[each_signal_obj], list):
@@ -865,42 +951,6 @@ class SynchronousTest(object):
                     each_signal._clear()
             else:
                 flattened_args[each_signal_obj]._clear()
-
-        def tb_wrapper():
-
-            (non_signal_list, flattened_ref_args,
-             flattened_arg_types, _, _)= (
-                 _create_flattened_args(self.args, self.arg_types))
-
-            signal_dict = {}
-
-            def append_signal_obj_to_dict(signal_obj, name):
-
-                if isinstance(signal_obj, list):
-                    # Special case the list signal object
-                    for n, each_signal in enumerate(signal_obj):
-                        if not isinstance(each_signal, myhdl._Signal._Signal):
-                            continue
-
-                        signal_dict[name + str(n)] = each_signal
-
-                else:
-                    signal_dict[name] = signal_obj
-
-            for each_signal_obj in flattened_args:
-
-                if flattened_arg_types[each_signal_obj] is 'output':
-                    pass
-                else:
-                    append_signal_obj_to_dict(
-                        flattened_args[each_signal_obj], each_signal_obj)
-
-            locals().update(signal_dict)
-
-            return tuple(self.random_sources + self.output_recorders +
-                         self.test_instances + self.custom_sources +
-                         [self.clockgen, self.init_reset])
-
 
         @block
         def top():
@@ -929,6 +979,14 @@ class SynchronousTest(object):
             axi_sources = [
                 factory(*args, **kwargs) for factory, args, kwargs in
                 self.axi_stream_out_bfm_sink_factories]
+
+            axi_sources.extend([
+                factory(*args, **kwargs) for factory, args, kwargs in
+                self.axi_stream_in_bfm_sink_factories])
+
+            axi_sources.extend([
+                factory(*args, **kwargs) for factory, args, kwargs in
+                self.axi_stream_in_buffer_factories])
 
             clockgen = self.clockgen_factory[0](
                 *self.clockgen_factory[1], **self.clockgen_factory[2])
@@ -1017,6 +1075,13 @@ class SynchronousTest(object):
             raise RuntimeError('The dut was configured to be None in '
                                'construction, so no meaningful conversion '
                                'can take place.')
+
+        # NOTE I'm not sure if this is the correct thing to do or not,
+        # but the signals and interfaces and so on that are used for the
+        # conversion are all the reference signals (not the dut signals).
+        # This is probably not a problem as they're really only used to define
+        # how the conversion should take place (and not actually run at all).
+        # It's important only insomuch as it needs to be done consistently.
 
         clock = self.clock
         reset = self.reset
@@ -1129,6 +1194,14 @@ class SynchronousTest(object):
                 recorded_local_name_list.append(each_signal_name)
                 flattened_dut_args[each_signal_name] = (
                     locals()[each_signal_name])
+
+            elif flattened_arg_types[each_signal_name] == 'axi_stream_in':
+                # We record all the axi signals
+                locals()[each_signal_name] = each_signal
+                recorded_local_name_list.append(each_signal_name)
+                flattened_dut_args[each_signal_name] = (
+                    locals()[each_signal_name])
+
             else:
                 # This should be played back too
                 drive_list = tuple(flattened_ref_outputs[each_signal_name])
@@ -1218,6 +1291,17 @@ class SynchronousTest(object):
         instances.append(file_writer(
             signal_output_file, recorded_list, clock, recorded_list_names))
 
+        # Set up the AXI drivers
+        for axi_interface_name in self.axi_stream_in_ref_bfms:
+
+            axi_bfm = self.axi_stream_in_ref_bfms[axi_interface_name]
+            axi_interface = self.axi_stream_in_ref_interfaces[
+                axi_interface_name]
+            packets = axi_bfm.completed_packets
+
+            instances.append(
+                axi_master_playback(clock, axi_interface, packets))
+
         # Now set up the AXI stream file writers. There is one file per axi
         # writer.
         for n, (axi_stream_out_bfm_factory, axi_interface_name) in (
@@ -1227,7 +1311,8 @@ class SynchronousTest(object):
             axi_stream_file_writer_filename = os.path.join(
                 axi_stream_packets_filename_prefix + '_' + axi_interface_name)
 
-            axi_stream_file_writer_args = list(axi_stream_out_bfm_factory[1])
+            axi_stream_file_writer_args = list(
+                axi_stream_out_bfm_factory[1][:-1])
             axi_stream_file_writer_args.append(
                 str(n) + '_' + axi_interface_name)
             axi_stream_file_writer_args.append(

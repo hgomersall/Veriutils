@@ -1300,6 +1300,55 @@ class TestAxiStreamSlaveBFM(TestCase):
             self.assertEqual(
                 trimmed_packet_list, self.test_sink.completed_packets)
 
+    def test_reset_method(self):
+        '''There should be a reset method that when called clears all the
+        recorded packets.
+        '''
+        @block
+        def testbench(clock):
+
+            test_sink = self.test_sink
+
+            master = self.source_stream.model(clock, self.interface)
+            slave = test_sink.model(clock, self.interface)
+
+            return master, slave
+
+        self.source_stream = AxiStreamMasterBFM()
+        self.test_sink = AxiStreamSlaveBFM()
+
+        packet_list = _add_random_packets_to_stream(
+            self.source_stream, self.max_packet_length,
+            self.max_new_packets, self.max_rand_val)
+
+        trimmed_packet_list = [
+            list(packet) for packet in packet_list if len(packet) > 0]
+
+        cycles = sum(len(packet) for packet in packet_list) + 1
+
+        myhdl_cosimulation(
+            cycles, None, testbench, self.args, self.arg_types)
+
+        assert self.test_sink.completed_packets == trimmed_packet_list
+
+        packet_list = _add_random_packets_to_stream(
+            self.source_stream, self.max_packet_length,
+            self.max_new_packets, self.max_rand_val)
+
+        added_trimmed_packet_list = [
+            list(packet) for packet in packet_list if len(packet) > 0]
+
+        cycles = sum(len(packet) for packet in packet_list) + 1
+
+        self.test_sink.reset()
+
+        myhdl_cosimulation(
+            cycles, None, testbench, self.args, self.arg_types)
+
+        self.assertEqual(self.test_sink.completed_packets,
+                         added_trimmed_packet_list)
+
+
 class TestAxiStreamBuffer(TestCase):
     '''There should be a block that interfaces with an AXI stream, buffering
     it as necessary if the output side is not ready. It should provide
