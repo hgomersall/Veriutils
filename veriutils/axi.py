@@ -296,6 +296,71 @@ class AxiStreamSlaveBFM(object):
 
 
 @block
+def axi_stream_buffer(
+    clock, axi_stream_in, axi_stream_out, passive_sink_mode=False):
+
+    data_buffer = deque([])
+
+    internal_TVALID = Signal(False)
+    internal_TLAST = Signal(False)
+    internal_TDATA = Signal(intbv(0)[len(axi_stream_out.TDATA):])
+
+    data_in_buffer = Signal(False)
+    use_internal_values = Signal(False)
+
+    @always_comb
+    def output_assignments():
+
+        if use_internal_values:
+            axi_stream_out.TVALID.next = internal_TVALID
+            axi_stream_out.TDATA.next = internal_TDATA
+            axi_stream_out.TLAST.next = internal_TLAST
+
+        else:
+            axi_stream_out.TVALID.next = axi_stream_in.TVALID
+            axi_stream_out.TDATA.next = axi_stream_in.TDATA
+            axi_stream_out.TLAST.next = axi_stream_in.TLAST
+
+    @always(clock.posedge)
+    def TREADY_driver():
+        axi_stream_in.TREADY.next = True
+
+    @always(clock.posedge)
+    def model():
+        transact_in = axi_stream_in.TREADY and axi_stream_in.TVALID
+        transact_out = axi_stream_out.TREADY and axi_stream_out.TVALID
+
+        if len(data_buffer) == 0:
+            if (transact_in and not transact_out) or (
+                transact_in and use_internal_values):
+
+                data_buffer.append(
+                    (int(axi_stream_in.TDATA.val),
+                     bool(axi_stream_in.TLAST.val)))
+
+            elif transact_out and not transact_in and use_internal_values:
+                use_internal_values.next = False
+
+        elif len(data_buffer) > 0 and transact_in:
+            data_buffer.append(
+                (int(axi_stream_in.TDATA.val), bool(axi_stream_in.TLAST.val)))
+
+        # Data might have just been put into the buffer, so we always check it
+        if len(data_buffer) > 0:
+            if transact_out or (not transact_out and not use_internal_values):
+                TDATA, TLAST = data_buffer.popleft()
+                internal_TDATA.next = TDATA
+                internal_TLAST.next = TLAST
+                internal_TVALID.next = True
+                use_internal_values.next = True
+
+    if not passive_sink_mode:
+        return model, output_assignments, TREADY_driver
+
+    else:
+        return model, output_assignments
+
+@block
 def axi_master_playback(clock, axi_interface, packets):
 
     # From the packets, we preload all the values that should be output.
@@ -341,7 +406,6 @@ def axi_master_playback(clock, axi_interface, packets):
             not internal_TVALID):
 
             if value_index < number_of_vals:
-
                 # We don't actually need to set these when TVALID is low,
                 # but there is no harm in doing so.
                 axi_interface.TLAST.next = TLASTs[value_index]

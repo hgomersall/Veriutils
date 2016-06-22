@@ -274,6 +274,34 @@ def _add_random_packets_to_stream(
 
     return _add_packets_to_stream(stream, packet_list)
 
+def _generate_random_packets_with_Nones(
+    data_byte_width, max_packet_length, max_new_packets):
+
+    def val_gen(data_byte_width):
+        # Generates Nones about half the time probability
+        val = random.randrange(0, 2**(8 * data_byte_width))
+        if val > 2**(8 * data_byte_width - 1):
+            return None
+        else:
+            return val
+
+    packet_list = deque(
+        [deque([
+            val_gen(data_byte_width) for m
+            in range(random.randrange(0, max_packet_length))]) for n
+            in range(random.randrange(0, max_new_packets))])
+
+    total_data_len = sum(len(each) for each in packet_list)
+
+    None_trimmed_packet_list = [
+        [val for val in packet if val is not None] for packet in
+        packet_list]
+
+    trimmed_packets = [
+        packet for packet in None_trimmed_packet_list if len(packet) > 0]
+
+    return packet_list, trimmed_packets, total_data_len
+
 class TestAxiStreamMasterBFM(TestCase):
     '''There should be an AXI Stream Bus Functional Model that implements
     a programmable AXI4 Stream protocol from the master side.
@@ -752,8 +780,8 @@ class TestAxiStreamMasterBFM(TestCase):
 
         def val_gen(data_byte_width):
             # Generates Nones about half the time probability
-            val = random.randrange(0, 2**(8 * self.data_byte_width))
-            if val > 2**(8 * self.data_byte_width - 1):
+            val = random.randrange(0, 2**(8 * data_byte_width))
+            if val > 2**(8 * data_byte_width - 1):
                 return None
             else:
                 return val
@@ -1271,6 +1299,348 @@ class TestAxiStreamSlaveBFM(TestCase):
 
             self.assertEqual(
                 trimmed_packet_list, self.test_sink.completed_packets)
+
+class TestAxiStreamBuffer(TestCase):
+    '''There should be a block that interfaces with an AXI stream, buffering
+    it as necessary if the output side is not ready. It should provide
+    both a slave and a master interface.
+    '''
+    def setUp(self):
+        self.data_byte_width = 8
+        self.max_packet_length = 20
+        self.max_new_packets = 10
+        self.max_rand_val = 2**(8 * self.data_byte_width)
+
+        self.source_stream = AxiStreamMasterBFM()
+        self.test_sink = AxiStreamSlaveBFM()
+
+        self.axi_stream_in = AxiStreamInterface(self.data_byte_width)
+        self.axi_stream_out = AxiStreamInterface(self.data_byte_width)
+
+        self.clock = Signal(bool(0))
+
+        self.args = {'clock': self.clock}
+        self.arg_types = {'clock': 'clock'}
+
+    def test_zero_latency_non_passive_case(self):
+        '''In the case where there is no need to buffer the signal (e.g.
+        because the axi sink is always ready) there should be no latency
+        in the outputs.
+
+        This should happen when the buffer is not in passive mode (i.e. when
+        TREADY is always set by the axi_stream_buffer block).
+        '''
+
+        @block
+        def testbench(clock, axi_in, axi_out):
+
+            buffer_block = axi_stream_buffer(
+                clock, axi_in, axi_out, passive_sink_mode=False)
+
+            @always(clock.posedge)
+            def compare_sink():
+
+                if axi_in.TVALID:
+                    self.assertTrue(axi_out.TVALID)
+                    self.assertEqual(axi_out.TDATA, axi_in.TDATA)
+                    self.assertEqual(axi_out.TLAST, axi_in.TLAST)
+
+            return buffer_block, compare_sink
+
+        self.args['axi_in'] = self.axi_stream_in
+        self.args['axi_out'] = self.axi_stream_out
+
+        self.arg_types['axi_in'] = {
+            'TDATA': 'custom', 'TLAST': 'custom', 'TVALID': 'custom',
+            'TREADY': 'custom'}
+
+        self.arg_types['axi_out'] = {
+            'TDATA': 'output', 'TLAST': 'output', 'TVALID': 'output',
+            'TREADY': 'output'}
+
+        max_packet_length = self.max_packet_length
+        max_new_packets = self.max_new_packets
+
+        packet_list, trimmed_packet_list, data_len = (
+            _generate_random_packets_with_Nones(
+                self.data_byte_width, self.max_packet_length,
+                self.max_new_packets))
+
+        self.source_stream.add_data(packet_list)
+
+        custom_sources = [
+            (self.source_stream.model, (self.clock, self.axi_stream_in), {}),
+            (self.test_sink.model,
+             (self.clock, self.axi_stream_out, 1.0), {})]
+
+        cycles = data_len + 1
+
+        myhdl_cosimulation(
+            cycles, None, testbench, self.args, self.arg_types,
+            custom_sources=custom_sources)
+
+        self.assertEqual(
+            trimmed_packet_list, self.test_sink.completed_packets)
+
+    def test_zero_latency_passive_case(self):
+        '''In the case where there is no need to buffer the signal (e.g.
+        because the axi sink is always ready) there should be no latency
+        in the outputs.
+
+        This should happen when the buffer is in passive mode (i.e. when
+        TREADY is set by a block other than that axi_stream_buffer block).
+        '''
+
+        @block
+        def testbench(clock, axi_in, axi_out):
+
+            buffer_block = axi_stream_buffer(
+                clock, axi_in, axi_out, passive_sink_mode=True)
+
+            @always(clock.posedge)
+            def compare_sink():
+
+                axi_out.TREADY.next = True
+
+                if axi_in.TVALID:
+                    self.assertTrue(axi_out.TVALID)
+                    self.assertEqual(axi_out.TDATA, axi_in.TDATA)
+                    self.assertEqual(axi_out.TLAST, axi_in.TLAST)
+
+            return buffer_block, compare_sink
+
+        self.args['axi_in'] = self.axi_stream_in
+        self.args['axi_out'] = self.axi_stream_out
+
+        self.arg_types['axi_in'] = {
+            'TDATA': 'custom', 'TLAST': 'custom', 'TVALID': 'custom',
+            'TREADY': 'output'}
+
+        self.arg_types['axi_out'] = {
+            'TDATA': 'output', 'TLAST': 'output', 'TVALID': 'output',
+            'TREADY': 'output'}
+
+        max_packet_length = self.max_packet_length
+        max_new_packets = self.max_new_packets
+
+        packet_list, trimmed_packet_list, data_len = (
+            _generate_random_packets_with_Nones(
+                self.data_byte_width, self.max_packet_length,
+                self.max_new_packets))
+
+        self.source_stream.add_data(packet_list)
+
+        TREADY_probability = 1.0
+        custom_sources = [
+            (self.source_stream.model, (self.clock, self.axi_stream_in), {}),
+            (self.test_sink.model,
+             (self.clock, self.axi_stream_in, TREADY_probability), {})]
+
+        cycles = data_len + 1
+
+        myhdl_cosimulation(
+            cycles, None, testbench, self.args, self.arg_types,
+            custom_sources=custom_sources)
+
+        self.assertEqual(
+            trimmed_packet_list, self.test_sink.completed_packets)
+
+    def test_buffering_in_non_passive_case(self):
+        '''In the case where the TREADY on the output bus is not the same
+        as the TREADY on the input bus, the data should be buffered so
+        it is not lost.
+
+        This should happen when the buffer is in non passive mode (i.e. when
+        TREADY is always set by the axi_stream_buffer block).
+        '''
+
+        @block
+        def testbench(clock, axi_in, axi_out):
+
+            buffer_block = axi_stream_buffer(
+                clock, axi_in, axi_out, passive_sink_mode=False)
+
+            return buffer_block
+
+        self.args['axi_in'] = self.axi_stream_in
+        self.args['axi_out'] = self.axi_stream_out
+
+        self.arg_types['axi_in'] = {
+            'TDATA': 'custom', 'TLAST': 'custom', 'TVALID': 'custom',
+            'TREADY': 'custom'}
+
+        self.arg_types['axi_out'] = {
+            'TDATA': 'output', 'TLAST': 'output', 'TVALID': 'output',
+            'TREADY': 'output'}
+
+        max_packet_length = self.max_packet_length
+        max_new_packets = self.max_new_packets
+
+        packet_list, trimmed_packet_list, data_len = (
+            _generate_random_packets_with_Nones(
+                self.data_byte_width, self.max_packet_length,
+                self.max_new_packets))
+
+        self.source_stream.add_data(packet_list)
+
+        ref_sink = AxiStreamSlaveBFM()
+
+        TREADY_probability = 0.2
+
+        custom_sources = [
+            (self.source_stream.model, (self.clock, self.axi_stream_in), {}),
+            (self.test_sink.model,
+             (self.clock, self.axi_stream_out, TREADY_probability), {})]
+
+        # Have lots of cycles so we can be pretty sure we'll get all the data.
+        cycles = data_len * 20 + 1
+
+        myhdl_cosimulation(
+            cycles, None, testbench, self.args, self.arg_types,
+            custom_sources=custom_sources)
+
+        self.assertEqual(
+            trimmed_packet_list, self.test_sink.completed_packets)
+
+    def test_buffering_in_passive_case(self):
+        '''In the case where the TREADY on the output bus is not the same
+        as the TREADY on the input bus, the data should be buffered so
+        it is not lost.
+
+        This should happen when the buffer is in passive mode (i.e. when
+        TREADY is set by a block other than that axi_stream_buffer block).
+        '''
+
+        @block
+        def testbench(clock, axi_in, axi_out):
+
+            buffer_block = axi_stream_buffer(
+                clock, axi_in, axi_out, passive_sink_mode=True)
+
+            return buffer_block
+
+        self.args['axi_in'] = self.axi_stream_in
+        self.args['axi_out'] = self.axi_stream_out
+
+        self.arg_types['axi_in'] = {
+            'TDATA': 'custom', 'TLAST': 'custom', 'TVALID': 'custom',
+            'TREADY': 'custom'}
+
+        self.arg_types['axi_out'] = {
+            'TDATA': 'output', 'TLAST': 'output', 'TVALID': 'output',
+            'TREADY': 'output'}
+
+        max_packet_length = self.max_packet_length
+        max_new_packets = self.max_new_packets
+
+        packet_list, trimmed_packet_list, data_len = (
+            _generate_random_packets_with_Nones(
+                self.data_byte_width, self.max_packet_length,
+                self.max_new_packets))
+
+        self.source_stream.add_data(packet_list)
+
+        ref_sink = AxiStreamSlaveBFM()
+
+        TREADY_probability = 0.2
+
+        custom_sources = [
+            (self.source_stream.model, (self.clock, self.axi_stream_in), {}),
+            (self.test_sink.model,
+             (self.clock, self.axi_stream_out, TREADY_probability), {}),
+            (ref_sink.model,
+             (self.clock, self.axi_stream_in, 1.0), {})]
+
+        # Have lots of cycles so we can be pretty sure we'll get all the data.
+        cycles = data_len * 20 + 1
+
+        myhdl_cosimulation(
+            cycles, None, testbench, self.args, self.arg_types,
+            custom_sources=custom_sources)
+
+        self.assertEqual(
+            trimmed_packet_list, self.test_sink.completed_packets)
+
+    def test_zero_latency_after_buffering_case(self):
+        '''In the case where the signal is buffered but then has time to
+        catch up (i.e. because no valid transactions are present on the input)
+        there should be once again no latency in the outputs.
+        '''
+
+        dump_sink = AxiStreamSlaveBFM()
+
+        @block
+        def testbench(clock, axi_in, axi_out):
+
+            buffer_block = axi_stream_buffer(
+                clock, axi_in, axi_out, passive_sink_mode=True)
+
+            states = enum('initial_data', 'catchup', 'zero_latency')
+            state = Signal(states.initial_data)
+
+            @always(clock.posedge)
+            def compare_sink():
+
+                if state == states.initial_data:
+                    if (self.test_sink.completed_packets ==
+                        trimmed_packet_list):
+
+                        state.next = states.catchup
+                        axi_out.TREADY.next = True
+
+                    else:
+                        axi_out.TREADY.next = False
+
+                elif state == states.catchup:
+                    axi_out.TREADY.next = True
+                    if dump_sink.completed_packets == trimmed_packet_list:
+                        state.next = states.zero_latency
+
+                else:
+                    if axi_in.TVALID:
+                        self.assertTrue(axi_out.TVALID)
+                        self.assertEqual(axi_out.TDATA, axi_in.TDATA)
+                        self.assertEqual(axi_out.TLAST, axi_in.TLAST)
+
+            return buffer_block, compare_sink
+
+        self.args['axi_in'] = self.axi_stream_in
+        self.args['axi_out'] = self.axi_stream_out
+
+        self.arg_types['axi_in'] = {
+            'TDATA': 'custom', 'TLAST': 'custom', 'TVALID': 'custom',
+            'TREADY': 'output'}
+
+        self.arg_types['axi_out'] = {
+            'TDATA': 'output', 'TLAST': 'output', 'TVALID': 'output',
+            'TREADY': 'output'}
+
+        max_packet_length = self.max_packet_length
+        max_new_packets = self.max_new_packets
+
+        packet_list, trimmed_packet_list, data_len = (
+            _generate_random_packets_with_Nones(
+                self.data_byte_width, self.max_packet_length,
+                self.max_new_packets))
+
+        self.source_stream.add_data(packet_list)
+
+        TREADY_probability = 1.0
+        custom_sources = [
+            (self.source_stream.model, (self.clock, self.axi_stream_in), {}),
+            (self.test_sink.model,
+             (self.clock, self.axi_stream_in, TREADY_probability), {}),
+            (dump_sink.model,
+             (self.clock, self.axi_stream_out, None), {})]
+
+        cycles = data_len * 3 + 1
+
+        myhdl_cosimulation(
+            cycles, None, testbench, self.args, self.arg_types,
+            custom_sources=custom_sources)
+
+        self.assertEqual(
+            trimmed_packet_list, self.test_sink.completed_packets)
 
 class TestAxiMasterPlaybackBlock(TestCase):
     '''There should be a convertible AXI master block that simply plays back
