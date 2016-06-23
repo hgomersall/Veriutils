@@ -535,6 +535,8 @@ class SynchronousTest(object):
             * `'output'`
             * `'custom'`
             * `'custom_reset'`
+            * `'axi_stream_in'`
+            * `'axi_stream_out'`
             * `'non-signal'`
 
         * The `'clock'` arg is auto-connected to a clock generator. There
