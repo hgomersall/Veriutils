@@ -251,15 +251,15 @@ def _get_next_val(packet_list, instance_data):
 
     return next_val
 
-def _add_packets_to_stream(stream, packet_list):
+def _add_packets_to_stream(stream, packet_list, **kwargs):
     '''Adds the supplied packets to the stream and returns them.
     '''
     packet_list = deque(deque(packet) for packet in packet_list)
-    stream.add_data(packet_list)
+    stream.add_data(packet_list, **kwargs)
     return packet_list
 
 def _add_random_packets_to_stream(
-    stream, max_packet_length, max_new_packets, max_val):
+    stream, max_packet_length, max_new_packets, max_val, **kwargs):
     '''Adds a load of random data to the stream and returns
     the list of added packets.
 
@@ -272,7 +272,7 @@ def _add_random_packets_to_stream(
                 in range(random.randrange(0, max_packet_length))]) for n
          in range(random.randrange(0, max_new_packets))])
 
-    return _add_packets_to_stream(stream, packet_list)
+    return _add_packets_to_stream(stream, packet_list, **kwargs)
 
 def _generate_random_packets_with_Nones(
     data_byte_width, max_packet_length, max_new_packets):
@@ -421,6 +421,62 @@ class TestAxiStreamMasterBFM(TestCase):
 
             self.assertEqual(total_data_len, cycle_count[0])
 
+    def test_incomplete_last_packet_argument(self):
+        '''It should be possible to set an argument when adding packets so
+        that the completion of the last packet does not set the TLAST flag.
+
+        This means it should be possible to add one continuous packet without
+        TLAST being asserted.
+        '''
+
+        @block
+        def testbench(clock):
+
+            bfm = self.stream.model(clock, self.interface)
+            inst_data = {}
+            @always(clock.posedge)
+            def inst():
+                self.interface.TREADY.next = True
+
+                if self.interface.TVALID:
+                    next_expected_val = _get_next_val(packet_list, inst_data)
+
+                    if (len(inst_data['packet']) == 0 and
+                        len(packet_list) != 0):
+
+                        # The last word in the packet
+                        assert self.interface.TLAST
+                    else:
+                        assert not self.interface.TLAST
+
+                    cycle_count[0] += 1
+
+                else:
+                    # TVALID being false is a condition of the test
+                    assert not self.interface.TVALID
+
+                    # Stop if there is nothing left to process
+                    if len(packet_list) == 0:
+                        raise StopSimulation
+
+                    elif all(len(each) == 0 for each in packet_list):
+                        raise StopSimulation
+
+            return inst, bfm
+
+        #run the test several times to better sample the test space
+        for n in range(30):
+            packet_list = _add_random_packets_to_stream(
+                self.stream, self.max_packet_length, self.max_new_packets,
+                self.max_rand_val, incomplete_last_packet=True)
+            total_data_len = sum(len(each) for each in packet_list)
+            cycle_count = [0]
+
+            myhdl_cosimulation(
+                None, None, testbench, self.args, self.arg_types)
+
+            self.assertEqual(total_data_len, cycle_count[0])
+
     def test_add_new_packets_during_simulation(self):
         '''It should be possible to add packets whilst a simulation is running
         '''
@@ -472,8 +528,9 @@ class TestAxiStreamMasterBFM(TestCase):
             return inst, bfm
 
         def checks():
+            max_cycles = self.max_packet_length * self.max_new_packets * 50
             myhdl_cosimulation(
-                None, None, testbench, self.args, self.arg_types)
+                max_cycles, None, testbench, self.args, self.arg_types)
 
             # A few test sanity checks.
             self.assertEqual(sum(len(packet) for packet in packet_list), 0)
@@ -557,8 +614,9 @@ class TestAxiStreamMasterBFM(TestCase):
             return inst, bfm
 
         def checks():
+            max_cycles = self.max_packet_length * self.max_new_packets * 50
             myhdl_cosimulation(
-                None, None, testbench, self.args, self.arg_types)
+                max_cycles, None, testbench, self.args, self.arg_types)
 
             # A few test sanity checks.
             self.assertEqual(sum(len(packet) for packet in packet_list), 0)
@@ -1839,6 +1897,96 @@ class TestAxiMasterPlaybackBlock(TestCase):
             self.arg_types, custom_sources=custom_sources)
 
         self.assertEqual(self.axi_slave.completed_packets, trimmed_packets)
+
+    def test_incomplete_last_packet_argument(self):
+        '''If the ``incomplete_last_packet`` argument is set to ``True``,
+        TLAST will not be asserted for the end of the last packet.
+
+        If the last packet is empty, this effectively negates the
+        ``incomplete_last_packet`` argument (since there is no data to not
+        assert TLAST on).
+        '''
+
+        @block
+        def exit_checker(clock):
+
+            cycles = [0]
+            @always(clock.posedge)
+            def checker():
+                # A sanity check to make sure we don't hang
+                assert cycles[0] < max_cycles
+                cycles[0] += 1
+                if (len(self.axi_slave.completed_packets) >=
+                    expected_completed_packets):
+
+                    if len(non_empty_packets) > 0:
+                        if (len(self.axi_slave.current_packet) >=
+                            len(non_empty_packets[-1])):
+                            raise StopSimulation
+
+                        elif (len(packet_list[-1]) == 0):
+                            raise StopSimulation
+
+                    else:
+                        raise StopSimulation
+
+            return checker
+
+        custom_sources = [
+            (exit_checker, (self.clock,), {}),
+            (self.axi_slave.model, (self.clock, self.axi_interface, 0.5), {})]
+
+        self.args['incomplete_last_packet'] = True
+        self.arg_types['incomplete_last_packet'] = 'non-signal'
+
+        max_val = self.max_rand_val
+
+        for max_packet_length, max_new_packets in ((20, 50), (3, 6)):
+            # Try both small and big packets
+            for n in range(10):
+                self.axi_slave.reset()
+
+                packet_list = [
+                    [random.randrange(0, max_val) for m
+                     in range(random.randrange(0, max_packet_length))] for n
+                    in range(random.randrange(0, max_new_packets))]
+
+                self.args['packets'] = packet_list
+
+                non_empty_packets = [
+                    packet for packet in packet_list if len(packet) > 0]
+                non_empty_packet_lengths = [
+                    len(packet) for packet in non_empty_packets]
+
+                max_cycles = 50 * max_packet_length * max_new_packets
+
+                expected_completed_packets = len(non_empty_packets)
+                if len(packet_list) > 0:
+                    if len(packet_list[-1]) != 0:
+                        expected_completed_packets -= 1
+
+                self.sim_wrapper(
+                    None, axi_master_playback, axi_master_playback, self.args,
+                    self.arg_types, custom_sources=custom_sources)
+
+                if len(packet_list) > 0:
+                    if len(packet_list[-1]) > 0:
+                        # a non empty last packet
+                        if len(self.axi_slave.completed_packets) > 0:
+                            self.assertEqual(
+                                self.axi_slave.completed_packets,
+                                non_empty_packets[:-1])
+
+                        if len(non_empty_packets) > 0:
+                            self.assertEqual(
+                                self.axi_slave.current_packet,
+                                non_empty_packets[-1])
+                    else:
+                        # The case in which the last packet is empty
+                        self.assertEqual(
+                            self.axi_slave.completed_packets,
+                            non_empty_packets)
+                        self.assertEqual(self.axi_slave.current_packet, [])
 
     def test_block_converts(self):
         '''The axi_master_playback block should convert to both VHDL and

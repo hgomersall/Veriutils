@@ -176,6 +176,25 @@ class CosimulationTestMixin(object):
                 dut_results[signal][:self.reset_cycles],
                 [self.default_args[signal]._init] * self.reset_cycles)
 
+    def test_simulation_exception_still_clears_state(self):
+        '''If an exception occurs during calls to the myhdl simulator, the
+        global simulator state should still be valid - that is, it should be
+        possible to run correct subsequent simulations.
+        '''
+        sim_cycles = 30
+
+        self.assertRaises(
+            Exception, self.construct_and_simulate,
+            ['garbage cycles'], self.identity_factory, self.identity_factory,
+            self.default_args, self.default_arg_types)
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, self.identity_factory, self.identity_factory,
+            self.default_args, self.default_arg_types)
+
+        for signal in dut_results:
+            self.assertEqual(dut_results[signal], ref_results[signal])
+
 
     def test_custom_source(self):
         '''It should be possible to specify custom sources.
@@ -298,9 +317,12 @@ class CosimulationTestMixin(object):
         in which case the AXI4 stream packets are output in addition to the
         signals.
 
-        The output should be a dictionary with two keys, ``packets`` and
-        ``signals``. ``packets`` should be the packetised outputs and signals
-        should be the raw signal outputs.
+        The output should be a dictionary with two keys, ``packets``,
+        ``incomplete_packets`` and ``signals``. ``packets`` should be the
+        completed packetised outputs (for which ``TLAST`` was asserted).
+        ``incomplete_packet`` should be the most recent AXI data for which
+        no ``TLAST`` was asserted, and ``signals`` should be the raw signal
+        outputs.
         '''
         self.clock = Signal(bool(1))
         self.test_in = AxiStreamInterface()
@@ -371,7 +393,97 @@ class CosimulationTestMixin(object):
             ref_results['axi_interface_out']['packets'], trimmed_packets)
 
         self.assertEqual(
+            ref_results['axi_interface_out']['incomplete_packet'], [])
+
+        self.assertEqual(
             dut_results['axi_interface_out']['packets'], trimmed_packets)
+
+        self.assertEqual(
+            dut_results['axi_interface_out']['incomplete_packet'], [])
+
+    def test_axi_stream_out_with_incomplete_packet(self):
+        '''It should be possible to use an ``axi_stream_out`` with an
+        incomplete last packet, in which case the incomplete packet is set
+        to the ``incomplete_packet`` key of the output dictionary.
+        '''
+        self.clock = Signal(bool(1))
+        self.test_in = AxiStreamInterface()
+        self.test_out = AxiStreamInterface()
+
+        max_packet_length = 20
+        max_new_packets = 50
+        max_val = 2**(8 * self.test_out.bus_width)
+
+        def val_gen():
+            # Generates Nones about half the time probability
+            val = random.randrange(0, max_val*2)
+            if val >= max_val:
+                return None
+            else:
+                return val
+
+        packet_list = [
+            [val_gen() for m
+             in range(random.randrange(3, max_packet_length))] for n
+            in range(random.randrange(3, max_new_packets))]
+
+        self.default_args = {'axi_interface_in': self.test_in,
+                             'axi_interface_out': self.test_out,
+                             'clock': self.clock}
+
+        self.default_arg_types = {
+            'axi_interface_in': {'TDATA': 'custom',
+                                 'TVALID': 'custom',
+                                 'TREADY': 'output',
+                                 'TLAST': 'custom'},
+            'axi_interface_out': 'axi_stream_out',
+            'clock': 'clock'}
+
+        @block
+        def axi_identity(clock, axi_interface_in, axi_interface_out):
+
+            @always_comb
+            def assign_signals():
+                axi_interface_in.TREADY.next = axi_interface_out.TREADY
+                axi_interface_out.TVALID.next = axi_interface_in.TVALID
+                axi_interface_out.TLAST.next = axi_interface_in.TLAST
+                axi_interface_out.TDATA.next = axi_interface_in.TDATA
+
+            return assign_signals
+
+
+        sim_cycles = sum(len(packet) for packet in packet_list) + 1
+
+        None_trimmed_packet_list = [
+            [val for val in packet if val is not None] for packet in
+            packet_list]
+
+        trimmed_packets = [
+            packet for packet in None_trimmed_packet_list if len(packet) > 0]
+
+        master_bfm = AxiStreamMasterBFM()
+        custom_sources = [(master_bfm.model, (self.clock, self.test_in), {})]
+
+        # Calling several times should work just fine
+        master_bfm.add_data(packet_list, incomplete_last_packet=True)
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, axi_identity, axi_identity,
+            self.default_args, self.default_arg_types,
+            custom_sources=custom_sources)
+
+        self.assertEqual(
+            ref_results['axi_interface_out']['packets'], trimmed_packets[:-1])
+
+        self.assertEqual(
+            ref_results['axi_interface_out']['incomplete_packet'],
+            trimmed_packets[-1])
+
+        self.assertEqual(
+            dut_results['axi_interface_out']['packets'], trimmed_packets[:-1])
+
+        self.assertEqual(
+            dut_results['axi_interface_out']['incomplete_packet'],
+            trimmed_packets[-1])
 
     def test_axi_stream_in_argument(self):
         '''It should be possible to set an argument to `axi_stream_in`, in
@@ -475,6 +587,109 @@ class CosimulationTestMixin(object):
             dut_results['axi_interface_out']['packets'],
             incremented_trimmed_packets)
 
+    def test_axi_stream_in_with_incomplete_packet(self):
+        '''It should be possible for an axi_stream_in argument to handle
+        an incomplete final packet.
+        '''
+        self.clock = Signal(bool(1))
+        self.test_in = AxiStreamInterface()
+        self.test_out = AxiStreamInterface()
+
+        max_packet_length = 20
+        max_new_packets = 50
+        max_val = 2**(8 * self.test_out.bus_width) - 1
+
+        def val_gen():
+            # Generates Nones about half the time probability
+            val = random.randrange(0, max_val*2)
+            if val >= max_val:
+                return None
+            else:
+                return val
+
+        packet_list = [
+            [val_gen() for m
+             in range(random.randrange(3, max_packet_length))] for n
+            in range(random.randrange(3, max_new_packets))]
+
+        self.default_args = {'axi_interface_in': self.test_in,
+                             'axi_interface_out': self.test_out,
+                             'clock': self.clock}
+
+        self.default_arg_types = {'axi_interface_in': 'axi_stream_in',
+                                  'axi_interface_out': 'axi_stream_out',
+                                  'clock': 'clock'}
+
+        @block
+        def axi_identity(clock, axi_interface_in, axi_interface_out):
+
+            @always_comb
+            def assign_signals():
+                axi_interface_in.TREADY.next = axi_interface_out.TREADY
+                axi_interface_out.TVALID.next = axi_interface_in.TVALID
+                axi_interface_out.TLAST.next = axi_interface_in.TLAST
+                axi_interface_out.TDATA.next = axi_interface_in.TDATA
+
+            return assign_signals
+
+        @block
+        def axi_offset_increment(clock, axi_interface_in, axi_interface_out):
+
+            internal_TVALID = Signal(False)
+            internal_TDATA = Signal(intbv(0)[len(axi_interface_in.TDATA):])
+            internal_TLAST = Signal(False)
+
+            # This works because axi_interface_out.TREADY is always True.
+            @always(clock.posedge)
+            def assign_signals():
+
+                internal_TVALID.next = axi_interface_in.TVALID
+                internal_TDATA.next = axi_interface_in.TDATA
+                internal_TLAST.next = axi_interface_in.TLAST
+
+                axi_interface_in.TREADY.next = True
+                axi_interface_out.TVALID.next = internal_TVALID
+                axi_interface_out.TLAST.next = internal_TLAST
+                axi_interface_out.TDATA.next = internal_TDATA + 1
+
+            return assign_signals
+
+        master_bfm = AxiStreamMasterBFM()
+        custom_sources = [(master_bfm.model, (self.clock, self.test_in), {})]
+
+        None_trimmed_packet_list = [
+            [val for val in packet if val is not None] for packet in
+            packet_list]
+
+        trimmed_packets = [
+            packet for packet in None_trimmed_packet_list if len(packet) > 0]
+
+        incremented_trimmed_packets = [
+            [val + 1 for val in packet] for packet in trimmed_packets]
+
+        sim_cycles = sum(len(packet) for packet in packet_list) + 3
+
+        master_bfm.add_data(packet_list, incomplete_last_packet=True)
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, axi_offset_increment, axi_identity,
+            self.default_args, self.default_arg_types,
+            custom_sources=custom_sources)
+
+        self.assertEqual(
+            ref_results['axi_interface_out']['packets'], trimmed_packets[:-1])
+
+        self.assertEqual(
+            dut_results['axi_interface_out']['packets'],
+            incremented_trimmed_packets[:-1])
+
+        self.assertEqual(
+            ref_results['axi_interface_out']['incomplete_packet'],
+            trimmed_packets[-1])
+
+        self.assertEqual(
+            dut_results['axi_interface_out']['incomplete_packet'],
+            incremented_trimmed_packets[-1])
 
     def test_all_argument_types_and_args_have_same_keys(self):
         '''The arg dict should have the same keys as the arg types dict

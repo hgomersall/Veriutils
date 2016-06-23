@@ -111,10 +111,14 @@ class AxiStreamMasterBFM(object):
         Currently ``TUSER`` is ignored.
         '''
         self._data = {}
+        self._TLASTs = {}
 
-    def add_data(self, data):#, stream_ID=0, stream_destination=0):
+    def add_data(self, data, incomplete_last_packet=False):#, stream_ID=0, stream_destination=0):
         '''Add data to this BFM. ``data`` is a list of lists, each sublist of
-        which comprises a packet (terminated by ``TKEEP`` being asserted).
+        which comprises a packet (terminated by ``TLAST`` being asserted).
+
+        If ``incomplete_last_packet`` is set to ``True``, the last packet in
+        ``data`` will not raise the ``TLAST`` flag.
 
         Values inside each packet (i.e. the inner lists) can be ``None``, in
         which case the value acts like a no-op, setting the ``TVALID`` flag to
@@ -129,14 +133,21 @@ class AxiStreamMasterBFM(object):
         stream_ID = 0
         stream_destination = 0
 
+        new_TLASTs = deque([True for packet in data])
+        if incomplete_last_packet:
+            if len(new_TLASTs) > 0:
+                new_TLASTs[-1] = False
+
         try:
             self._data[(stream_ID, stream_destination)].extend(
                 deque([deque(packet) for packet in data]))
+            self._TLASTs[(stream_ID, stream_destination)].extend(new_TLASTs)
 
         except KeyError:
             self._data[(stream_ID, stream_destination)] = deque(
                 [deque(packet) for packet in data])
 
+            self._TLASTs[(stream_ID, stream_destination)] = new_TLASTs
 
     @block
     def model(self, clock, interface):
@@ -166,7 +177,8 @@ class AxiStreamMasterBFM(object):
 
                                 model_rundata['packet'] = self._data[
                                     (stream_ID, stream_destination)].popleft()
-
+                                model_rundata['packet_TLAST'] = self._TLASTs[
+                                    (stream_ID, stream_destination)].popleft()
                             else:
                                 # Nothing left to get, so we drop out.
                                 break
@@ -178,7 +190,7 @@ class AxiStreamMasterBFM(object):
 
                     if len(model_rundata['packet']) == 1:
 
-                        interface.TLAST.next = True
+                        interface.TLAST.next = model_rundata['packet_TLAST']
                         value = model_rundata['packet'].popleft()
 
                         # Nothing left in the packet
@@ -191,7 +203,8 @@ class AxiStreamMasterBFM(object):
                         # in the packet are None
                         if all(
                             [val is None for val in model_rundata['packet']]):
-                            interface.TLAST.next = True
+                            interface.TLAST.next = (
+                                model_rundata['packet_TLAST'])
                         else:
                             interface.TLAST.next = False
 
@@ -367,7 +380,8 @@ def axi_stream_buffer(
         return model, output_assignments
 
 @block
-def axi_master_playback(clock, axi_interface, packets):
+def axi_master_playback(
+    clock, axi_interface, packets, incomplete_last_packet=False):
 
     # From the packets, we preload all the values that should be output.
     # This is TDATA, TVALID and TLAST
@@ -387,12 +401,17 @@ def axi_master_playback(clock, axi_interface, packets):
 
     TLASTs = [0] * len(TDATAs)
 
+    TLAST_vals = [1] * len(packet_lengths)
+    if incomplete_last_packet:
+        if len(TLAST_vals) > 0:
+            TLAST_vals[-1] = 0
+
     TLAST_offset = -1
-    for length, stripped_length in zip(
-        packet_lengths, None_stripped_packet_lengths):
+    for length, stripped_length, TLAST_val in zip(
+        packet_lengths, None_stripped_packet_lengths, TLAST_vals):
 
         if length > 0:
-            TLASTs[TLAST_offset + stripped_length] = 1
+            TLASTs[TLAST_offset + stripped_length] = TLAST_val
             TLAST_offset += length
 
         else:

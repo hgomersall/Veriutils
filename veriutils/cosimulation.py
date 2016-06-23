@@ -1010,12 +1010,14 @@ class SynchronousTest(object):
 
         top_level_block.config_sim(trace=trace)
 
-        if cycles is not None:
-            top_level_block.run_sim(duration=cycles*self.period, quiet=1)
-        else:
-            top_level_block.run_sim(duration=None, quiet=1)
+        try:
+            if cycles is not None:
+                top_level_block.run_sim(duration=cycles*self.period, quiet=1)
+            else:
+                top_level_block.run_sim(duration=None, quiet=1)
 
-        top_level_block.quit_sim()
+        finally:
+            top_level_block.quit_sim()
 
         self._simulator_run = True
 
@@ -1039,7 +1041,8 @@ class SynchronousTest(object):
 
             self.outputs[1][each_axi_interface] = {
                 'signals': ref_axi_signals,
-                'packets': ref_bfm.completed_packets}
+                'packets': ref_bfm.completed_packets,
+                'incomplete_packet': ref_bfm.current_packet}
 
             if self.axi_stream_out_dut_bfms is not None:
                 dut_axi_signals = axi_interface_from_name(
@@ -1048,7 +1051,8 @@ class SynchronousTest(object):
 
                 self.outputs[0][each_axi_interface] = {
                     'signals': dut_axi_signals,
-                    'packets': dut_bfm.completed_packets}
+                    'packets': dut_bfm.completed_packets,
+                    'incomplete_packet': dut_bfm.current_packet}
 
         return self.outputs
 
@@ -1299,8 +1303,14 @@ class SynchronousTest(object):
                 axi_interface_name]
             packets = axi_bfm.completed_packets
 
-            instances.append(
-                axi_master_playback(clock, axi_interface, packets))
+            if len(axi_bfm.current_packet) > 0:
+                packets.append(axi_bfm.current_packet)
+                instances.append(
+                    axi_master_playback(clock, axi_interface, packets,
+                                        incomplete_last_packet=True))
+            else:
+                instances.append(
+                    axi_master_playback(clock, axi_interface, packets))
 
         # Now set up the AXI stream file writers. There is one file per axi
         # writer.
