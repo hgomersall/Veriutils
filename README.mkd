@@ -12,7 +12,7 @@ It seems to be necessary to install with pip from a source distribution
 
     python setup.py sdist
     cd dist
-    sudo pip install Veriutils-0.3.tar.gz
+    sudo pip install Veriutils-0.4.tar.gz
 
 The Vivado specific code has now been moved out into its own project 
 called [Ovenbird](https://github.com/hgomersall/Ovenbird), which works
