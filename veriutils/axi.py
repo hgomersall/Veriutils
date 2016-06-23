@@ -227,6 +227,8 @@ class AxiStreamMasterBFM(object):
 
 
 class AxiStreamSlaveBFM(object):
+    '''An AXI4 Stream Slave MyHDL bus functional model.
+    '''
 
     @property
     def current_packet(self):
@@ -317,6 +319,15 @@ class AxiStreamSlaveBFM(object):
 @block
 def axi_stream_buffer(
     clock, axi_stream_in, axi_stream_out, passive_sink_mode=False):
+    '''An AXI4 Stream MyHDL FIFO buffer with arbitrary depth.
+
+    ``axi_stream_in`` is buffered until ``axi_stream_out`` is capable
+    of handling the data.
+
+    If ``passive_sink_mode`` is set to ``True``, this block will not touch
+    the ``TREADY`` signal on ``axi_stream_in`` - it simply monitors the
+    transactions and buffers them for ``axi_stream_out``.
+    '''
 
     data_buffer = deque([])
 
@@ -382,7 +393,13 @@ def axi_stream_buffer(
 @block
 def axi_master_playback(
     clock, axi_interface, packets, incomplete_last_packet=False):
+    '''A convertible block that plays back the list of packets (themselves
+    lists of data values) over an AXI stream interface.
 
+    If ``incomplete_last_packet`` is set to True, the final packet in the
+    packets list will not trigger the ``TLAST`` to be asserted. This means
+    data streams for which ``TLAST`` is not meaningful can be modelled.
+    '''
     # From the packets, we preload all the values that should be output.
     # This is TDATA, TVALID and TLAST
 
