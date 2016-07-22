@@ -25,7 +25,7 @@ class AxiStreamInterface(object):
 
     def __init__(self, bus_width=4, TID_width=None, TDEST_width=None,
                  TUSER_width=None, TVALID_init=False, TREADY_init=False,
-                 use_TSTRB=False, use_TKEEP=False):
+                 use_TLAST=True, use_TSTRB=False, use_TKEEP=False):
         '''Creates an AXI4 Stream interface object. The signals and parameters
         are exactly as described in the AMBA 4 AXI4 Stream Protocol
         Specification.
@@ -73,7 +73,9 @@ class AxiStreamInterface(object):
         self.TVALID = Signal(bool(TVALID_init))
         self.TREADY = Signal(bool(TREADY_init))
         self.TDATA = Signal(intbv(0)[8*self.bus_width:])
-        self.TLAST = Signal(bool(0))
+
+        if use_TLAST:
+            self.TLAST = Signal(bool(0))
 
         if use_TSTRB:
             self.TSTRB = Signal(intbv(0)[self.bus_width:])
@@ -158,6 +160,22 @@ class AxiStreamMasterBFM(object):
         stream_ID = 0
         stream_destination = 0
 
+        use_TLAST = hasattr(interface, 'TLAST')
+
+        return_instances = []
+
+        if use_TLAST:
+            internal_TLAST = Signal(interface.TLAST.val)
+
+            @always_comb
+            def assign_TLAST():
+                interface.TLAST.next = internal_TLAST
+
+            return_instances.append(assign_TLAST)
+
+        else:
+            internal_TLAST = Signal(False)
+
         @always(clock.posedge)
         def model_inst():
 
@@ -190,7 +208,7 @@ class AxiStreamMasterBFM(object):
 
                     if len(model_rundata['packet']) == 1:
 
-                        interface.TLAST.next = model_rundata['packet_TLAST']
+                        internal_TLAST.next = model_rundata['packet_TLAST']
                         value = model_rundata['packet'].popleft()
 
                         # Nothing left in the packet
@@ -203,10 +221,10 @@ class AxiStreamMasterBFM(object):
                         # in the packet are None
                         if all(
                             [val is None for val in model_rundata['packet']]):
-                            interface.TLAST.next = (
+                            internal_TLAST.next = (
                                 model_rundata['packet_TLAST'])
                         else:
-                            interface.TLAST.next = False
+                            internal_TLAST.next = False
 
                     if value is not None:
                         None_data.next = False
@@ -222,8 +240,9 @@ class AxiStreamMasterBFM(object):
                     # next time
                     del model_rundata['packet']
 
+        return_instances.append(model_inst)
 
-        return model_inst
+        return return_instances
 
 
 class AxiStreamSlaveBFM(object):
@@ -286,6 +305,21 @@ class AxiStreamSlaveBFM(object):
         ``TREADY_probability`` is set to ``0.0``, but the driver code is
         still implemented in that case).
         '''
+        use_TLAST = hasattr(interface, 'TLAST')
+
+        if use_TLAST:
+            internal_TLAST = Signal(interface.TLAST.val)
+
+            @always_comb
+            def assign_TLAST():
+                internal_TLAST.next = interface.TLAST
+
+        else:
+            internal_TLAST = Signal(False)
+
+            @always(clock.posedge)
+            def assign_TLAST():
+                internal_TLAST.next = False
 
         @always(clock.posedge)
         def TREADY_driver():
@@ -301,7 +335,7 @@ class AxiStreamSlaveBFM(object):
                 self._current_packet.append(
                     copy.copy(int(interface.TDATA._val)))
 
-                if interface.TLAST:
+                if internal_TLAST:
                     # End of a packet, so copy the current packet into
                     # complete_packets and empty the current packet.
                     self._completed_packets.append(
@@ -309,11 +343,12 @@ class AxiStreamSlaveBFM(object):
 
                     del self._current_packet[:]
 
-        if TREADY_probability is None:
-            return model_inst
+        return_instances = [model_inst, assign_TLAST]
 
-        else:
-            return model_inst, TREADY_driver
+        if TREADY_probability is not None:
+            return_instances.append(TREADY_driver)
+
+        return return_instances
 
 
 @block
@@ -331,6 +366,8 @@ def axi_stream_buffer(
 
     data_buffer = deque([])
 
+    internal_input_TLAST = Signal(False)
+
     internal_TVALID = Signal(False)
     internal_TLAST = Signal(False)
     internal_TDATA = Signal(intbv(0)[len(axi_stream_out.TDATA):])
@@ -338,18 +375,40 @@ def axi_stream_buffer(
     data_in_buffer = Signal(False)
     use_internal_values = Signal(False)
 
+    use_input_TLAST = hasattr(axi_stream_in, 'TLAST')
+    use_output_TLAST = hasattr(axi_stream_out, 'TLAST')
+
+    if use_input_TLAST:
+        @always_comb
+        def input_TLAST_assignment():
+            internal_input_TLAST.next = axi_stream_in.TLAST
+
+    else:
+        @always(clock.posedge)
+        def input_TLAST_assignment():
+            internal_input_TLAST.next = False
+
+    if use_output_TLAST:
+        @always_comb
+        def output_TLAST_assignment():
+            if use_internal_values:
+                axi_stream_out.TLAST.next = internal_TLAST
+            else:
+                axi_stream_out.TLAST.next = internal_input_TLAST
+
+    else:
+        output_TLAST_assignment = None
+
     @always_comb
     def output_assignments():
 
         if use_internal_values:
             axi_stream_out.TVALID.next = internal_TVALID
             axi_stream_out.TDATA.next = internal_TDATA
-            axi_stream_out.TLAST.next = internal_TLAST
 
         else:
             axi_stream_out.TVALID.next = axi_stream_in.TVALID
             axi_stream_out.TDATA.next = axi_stream_in.TDATA
-            axi_stream_out.TLAST.next = axi_stream_in.TLAST
 
     @always(clock.posedge)
     def TREADY_driver():
@@ -366,14 +425,14 @@ def axi_stream_buffer(
 
                 data_buffer.append(
                     (int(axi_stream_in.TDATA.val),
-                     bool(axi_stream_in.TLAST.val)))
+                     bool(internal_input_TLAST.val)))
 
             elif transact_out and not transact_in and use_internal_values:
                 use_internal_values.next = False
 
         elif len(data_buffer) > 0 and transact_in:
             data_buffer.append(
-                (int(axi_stream_in.TDATA.val), bool(axi_stream_in.TLAST.val)))
+                (int(axi_stream_in.TDATA.val), bool(internal_input_TLAST.val)))
 
         # Data might have just been put into the buffer, so we always check it
         if len(data_buffer) > 0:
@@ -384,11 +443,15 @@ def axi_stream_buffer(
                 internal_TVALID.next = True
                 use_internal_values.next = True
 
-    if not passive_sink_mode:
-        return model, output_assignments, TREADY_driver
+    return_instances = [model, output_assignments, input_TLAST_assignment]
 
-    else:
-        return model, output_assignments
+    if not passive_sink_mode:
+        return_instances.append(TREADY_driver)
+
+    if use_output_TLAST:
+        return_instances.append(output_TLAST_assignment)
+
+    return return_instances
 
 @block
 def axi_master_playback(
@@ -441,8 +504,25 @@ def axi_master_playback(
 
     internal_TVALID = Signal(False)
 
+    use_TLAST = hasattr(axi_interface, 'TLAST')
+
+    if use_TLAST:
+
+        @always(clock.posedge)
+        def playback_TLAST():
+            # Replicates the logic of playback_core in terms of when to
+            # playback the signals
+            if ((axi_interface.TREADY and internal_TVALID) or
+                not internal_TVALID):
+
+                if value_index < number_of_vals:
+                    axi_interface.TLAST.next = TLASTs[value_index]
+
+    else:
+        playback_TLAST = None
+
     @always(clock.posedge)
-    def playback():
+    def playback_core():
 
         if ((axi_interface.TREADY and internal_TVALID) or
             not internal_TVALID):
@@ -450,7 +530,6 @@ def axi_master_playback(
             if value_index < number_of_vals:
                 # We don't actually need to set these when TVALID is low,
                 # but there is no harm in doing so.
-                axi_interface.TLAST.next = TLASTs[value_index]
                 axi_interface.TDATA.next = TDATAs[value_index]
 
                 internal_TVALID.next = TVALIDs[value_index]
@@ -465,4 +544,9 @@ def axi_master_playback(
 
                 value_index.next = value_index
 
-    return playback
+    return_instances = [playback_core]
+
+    if use_TLAST:
+        return_instances.append(playback_TLAST)
+
+    return return_instances

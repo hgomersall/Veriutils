@@ -98,11 +98,17 @@ class TestAxiStreamInterface(TestCase):
 
     def test_TLAST(self):
         '''There should be a TLAST attribute that is a boolean Signal.
+
+        It should be disabled by setting ``use_TLAST`` to False.
         '''
         interface = AxiStreamInterface()
         self.assertTrue(isinstance(interface.TLAST, myhdl._Signal._Signal))
         self.assertTrue(isinstance(interface.TLAST._val, (intbv, bool)))
         self.assertEqual(len(interface.TLAST), 1)
+
+        interface = AxiStreamInterface(use_TLAST=False)
+        self.assertFalse(hasattr(interface, 'TLAST'))
+
 
     def test_TID_width_property(self):
         '''There should be a TID_width property which is set by the
@@ -420,6 +426,54 @@ class TestAxiStreamMasterBFM(TestCase):
                 None, None, testbench, self.args, self.arg_types)
 
             self.assertEqual(total_data_len, cycle_count[0])
+
+    def test_missing_TLAST(self):
+        '''If the interface is missing TLAST, it should simply be ignored.
+
+        In effect, the packets lose their boundary information.
+        '''
+
+        interface = AxiStreamInterface(self.data_byte_width, use_TLAST=False)
+
+        @block
+        def testbench(clock):
+
+            bfm = self.stream.model(clock, interface)
+            inst_data = {}
+            @always(clock.posedge)
+            def inst():
+                interface.TREADY.next = True
+
+                if interface.TVALID:
+                    next_expected_val = _get_next_val(packet_list, inst_data)
+
+                    assert interface.TDATA == next_expected_val
+                    cycle_count[0] += 1
+
+                else:
+                    # Stop if there is nothing left to process
+                    if len(packet_list) == 0:
+                        raise StopSimulation
+
+                    elif all(len(each) == 0 for each in packet_list):
+                        raise StopSimulation
+
+
+            return inst, bfm
+
+        for n in range(30):
+            packet_list = _add_random_packets_to_stream(
+                self.stream, self.max_packet_length, self.max_new_packets,
+                self.max_rand_val)
+
+            total_data_len = sum(len(each) for each in packet_list)
+            cycle_count = [0]
+
+            myhdl_cosimulation(
+                None, None, testbench, self.args, self.arg_types)
+
+            self.assertEqual(total_data_len, cycle_count[0])
+
 
     def test_incomplete_last_packet_argument(self):
         '''It should be possible to set an argument when adding packets so
@@ -1358,6 +1412,70 @@ class TestAxiStreamSlaveBFM(TestCase):
             self.assertEqual(
                 trimmed_packet_list, self.test_sink.completed_packets)
 
+    def test_missing_TLAST(self):
+        '''If TLAST is missing from the interface, then the effect should be
+        that no packets are completed.
+        '''
+
+        interface = AxiStreamInterface(self.data_byte_width, use_TLAST=False)
+
+        @block
+        def testbench(clock):
+
+            test_sink = self.test_sink
+
+            master = self.source_stream.model(clock, interface)
+            slave = test_sink.model(clock, interface)
+
+            check_packet_next_time = Signal(False)
+            checker_data = {'data_in_packet': 0}
+
+            @always(clock.posedge)
+            def checker():
+                if (len(test_sink.current_packet) == len(trimmed_data_list)):
+                    raise StopSimulation
+
+                if (interface.TVALID and interface.TREADY):
+
+                    checker_data['data_in_packet'] += 1
+
+                    expected_length = checker_data['data_in_packet']
+                    packet_length = len(test_sink.current_packet)
+
+                    # depending on whether this has run first or the dut
+                    # has run first, we might be one value difference in
+                    # length
+                    self.assertTrue(
+                        packet_length == expected_length
+                        or packet_length == (expected_length - 1))
+
+                    expected_packet = (
+                        trimmed_data_list[:packet_length])
+
+                    self.assertTrue(
+                        all(ref == test for ref, test in
+                            zip(expected_packet, test_sink.current_packet)))
+
+            return master, slave, checker
+
+        for n in range(30):
+            # lots of test cases
+
+            # We need new BFMs for every run
+            self.source_stream = AxiStreamMasterBFM()
+            self.test_sink = AxiStreamSlaveBFM()
+
+            packet_list = _add_random_packets_to_stream(
+                self.source_stream, self.max_packet_length,
+                self.max_new_packets, self.max_rand_val)
+
+            trimmed_data_list = [
+                val for packet in packet_list for val in packet]
+
+            myhdl_cosimulation(
+                None, None, testbench, self.args, self.arg_types)
+
+
     def test_reset_method(self):
         '''There should be a reset method that when called clears all the
         recorded packets.
@@ -1749,6 +1867,121 @@ class TestAxiStreamBuffer(TestCase):
         self.assertEqual(
             trimmed_packet_list, self.test_sink.completed_packets)
 
+    def test_no_TLAST_on_input(self):
+        '''If TLAST is missing on the input, the TLAST should always be
+        False on the output.
+        '''
+
+        @block
+        def testbench(clock, axi_in, axi_out):
+
+            buffer_block = axi_stream_buffer(
+                clock, axi_in, axi_out, passive_sink_mode=False)
+
+            return buffer_block
+
+        axi_stream_in = AxiStreamInterface(
+            self.data_byte_width, use_TLAST=False)
+
+        self.args['axi_in'] = axi_stream_in
+        self.args['axi_out'] = self.axi_stream_out
+
+        self.arg_types['axi_in'] = {
+            'TDATA': 'custom', 'TVALID': 'custom', 'TREADY': 'custom'}
+
+        self.arg_types['axi_out'] = {
+            'TDATA': 'output', 'TLAST': 'output', 'TVALID': 'output',
+            'TREADY': 'output'}
+
+        max_packet_length = self.max_packet_length
+        max_new_packets = self.max_new_packets
+
+        packet_list, trimmed_packet_list, data_len = (
+            _generate_random_packets_with_Nones(
+                self.data_byte_width, self.max_packet_length,
+                self.max_new_packets))
+
+        trimmed_data_list = [
+            val for packet in trimmed_packet_list for val in packet]
+
+        self.source_stream.add_data(packet_list)
+
+        ref_sink = AxiStreamSlaveBFM()
+
+        TREADY_probability = 0.2
+
+        custom_sources = [
+            (self.source_stream.model, (self.clock, axi_stream_in), {}),
+            (self.test_sink.model,
+             (self.clock, self.axi_stream_out, TREADY_probability), {})]
+
+        # Have lots of cycles so we can be pretty sure we'll get all the data.
+        cycles = data_len * 20 + 1
+
+        myhdl_cosimulation(
+            cycles, None, testbench, self.args, self.arg_types,
+            custom_sources=custom_sources)
+
+        self.assertEqual(self.test_sink.completed_packets, [])
+        self.assertEqual(trimmed_data_list, self.test_sink.current_packet)
+
+    def test_no_TLAST_on_output(self):
+        '''If TLAST is missing on the output, this should be handled fine.
+        '''
+
+        @block
+        def testbench(clock, axi_in, axi_out):
+
+            buffer_block = axi_stream_buffer(
+                clock, axi_in, axi_out, passive_sink_mode=False)
+
+            return buffer_block
+
+        axi_stream_out = AxiStreamInterface(
+            self.data_byte_width, use_TLAST=False)
+
+        self.args['axi_in'] = self.axi_stream_in
+        self.args['axi_out'] = axi_stream_out
+
+        self.arg_types['axi_in'] = {
+            'TDATA': 'custom', 'TVALID': 'custom', 'TREADY': 'custom',
+            'TLAST': 'custom'}
+
+        self.arg_types['axi_out'] = {
+            'TDATA': 'output', 'TVALID': 'output', 'TREADY': 'output'}
+
+        max_packet_length = self.max_packet_length
+        max_new_packets = self.max_new_packets
+
+        packet_list, trimmed_packet_list, data_len = (
+            _generate_random_packets_with_Nones(
+                self.data_byte_width, self.max_packet_length,
+                self.max_new_packets))
+
+        trimmed_data_list = [
+            val for packet in trimmed_packet_list for val in packet]
+
+        self.source_stream.add_data(packet_list)
+
+        ref_sink = AxiStreamSlaveBFM()
+
+        TREADY_probability = 0.2
+
+        custom_sources = [
+            (self.source_stream.model, (self.clock, self.axi_stream_in), {}),
+            (self.test_sink.model,
+             (self.clock, axi_stream_out, TREADY_probability), {})]
+
+        # Have lots of cycles so we can be pretty sure we'll get all the data.
+        cycles = data_len * 20 + 1
+
+        myhdl_cosimulation(
+            cycles, None, testbench, self.args, self.arg_types,
+            custom_sources=custom_sources)
+
+        self.assertEqual(self.test_sink.completed_packets, [])
+        self.assertEqual(trimmed_data_list, self.test_sink.current_packet)
+
 class TestAxiMasterPlaybackBlock(TestCase):
     '''There should be a convertible AXI master block that simply plays back
     the packets it is passed.
@@ -1987,6 +2220,62 @@ class TestAxiMasterPlaybackBlock(TestCase):
                             self.axi_slave.completed_packets,
                             non_empty_packets)
                         self.assertEqual(self.axi_slave.current_packet, [])
+
+    def test_no_TLAST_on_interface(self):
+        '''A missing TLAST on the interface should be handled with no problem.
+        '''
+        max_packet_length = 20
+        max_new_packets = 50
+        max_val = self.max_rand_val
+
+        axi_interface = AxiStreamInterface(
+            self.data_byte_width, use_TLAST=False)
+
+        packet_list = [
+            [random.randrange(0, max_val) for m
+             in range(random.randrange(0, max_packet_length))] for n
+            in range(random.randrange(0, max_new_packets))]
+
+        self.args['packets'] = packet_list
+
+        non_empty_packets = [
+            packet for packet in packet_list if len(packet) > 0]
+        non_empty_packet_lengths = [
+            len(packet) for packet in non_empty_packets]
+
+        output_data = [val for packet in non_empty_packets for val in packet]
+
+        max_cycles = 50 * max_packet_length * max_new_packets
+
+        @block
+        def exit_checker(clock):
+
+            cycles = [0]
+            @always(clock.posedge)
+            def checker():
+                # A sanity check to make sure we don't hang
+                assert cycles[0] < max_cycles
+                cycles[0] += 1
+
+                if (len(self.axi_slave.current_packet) >= len(output_data)):
+                    raise StopSimulation
+
+            return checker
+
+        self.args['axi_interface'] = axi_interface
+        self.arg_types['axi_interface'] = {
+            'TVALID': 'output', 'TREADY': 'custom', 'TDATA': 'output'}
+
+        custom_sources = [
+            (exit_checker, (self.clock,), {}),
+            (self.axi_slave.model, (self.clock, axi_interface, 0.5), {})]
+
+        self.sim_wrapper(
+            None, axi_master_playback, axi_master_playback, self.args,
+            self.arg_types, custom_sources=custom_sources)
+
+        self.assertEqual(self.axi_slave.completed_packets, [])
+        self.assertEqual(self.axi_slave.current_packet, output_data)
 
     def test_block_converts(self):
         '''The axi_master_playback block should convert to both VHDL and

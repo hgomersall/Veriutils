@@ -4,6 +4,8 @@ from myhdl import Signal, ResetSignal, intbv, enum
 from veriutils import (
     check_intbv_signal, check_bool_signal, check_reset_signal)
 
+import random
+
 class TestCheckIntbvSignal(TestCase):
     '''There should be a check on intbv signals, making sure the signal fits
     with what should be expected.
@@ -13,7 +15,7 @@ class TestCheckIntbvSignal(TestCase):
         '''The test signal should be an instance of _Signal
         '''
         self.assertRaisesRegex(
-            ValueError, 'Port %s should be an intbv Signal' % ('foo',), 
+            ValueError, 'Port %s should be an intbv Signal' % ('foo',),
             check_intbv_signal, 'not a signal', 'foo', 10, False)
 
     def test_single_bit_val_type(self):
@@ -34,7 +36,7 @@ class TestCheckIntbvSignal(TestCase):
         for name, signal, width, signed in failing_test_cases:
             self.assertRaisesRegex(
                 ValueError, 'Port %s signal of width %d should be a '
-                'single bit intbv value or a boolean value.' % (name, width), 
+                'single bit intbv value or a boolean value.' % (name, width),
                 check_intbv_signal, signal, name, width, signed)
 
     def test_at_least_one_of_width_or_val_range(self):
@@ -44,39 +46,39 @@ class TestCheckIntbvSignal(TestCase):
         '''
         self.assertRaisesRegex(
             ValueError, 'There should be at least a correct_width or a '
-            'val_range set in the arguments.', 
+            'val_range set in the arguments.',
             check_intbv_signal, Signal(intbv(0)[1:]), 'foo', signed=False)
 
 
     def test_intbv_range_inside(self):
-        '''Setting the val_range and range_test='inside' should check the 
+        '''Setting the val_range and range_test='inside' should check the
         range of the signal is inclusively inside the val_range supplied.
 
-        The val_range should be defined by list-like object with the first 
-        value giving the minimum expected inclusive minimum value of the intbv 
-        and the second value giving the maximum expected exclusive maximum 
+        The val_range should be defined by list-like object with the first
+        value giving the minimum expected inclusive minimum value of the intbv
+        and the second value giving the maximum expected exclusive maximum
         value of the intbv.
 
         That is, if val_range = (n, p), the min attribute of the signal should
         be >= n and the max attribute should be <= p.
         '''
         test_cases = (
-            ('foo', Signal(intbv(200, min=100, max=500)), 
+            ('foo', Signal(intbv(200, min=100, max=500)),
              (101, 499), (0, 501)),
             ('foo2', Signal(intbv(0)[5:]), (0, 2**5 - 1), (0, 2**5 + 1)),
             ('bar', Signal(intbv(0, min=-40, max=50)), (-40, 49), (-40, 51)),
             ('boo', Signal(intbv(0, min=-40, max=50)), (-39, 50), (-41, 50)),
-            ('baz', Signal(intbv(10, min=-(2**10), max=2**10)), 
+            ('baz', Signal(intbv(10, min=-(2**10), max=2**10)),
              (-1023, 1024), (-1025, 1024)),
             ('bleh', Signal(bool(0)), (0, 1), (0, 3))
         )
 
         for name, signal, smaller_range, bigger_range in test_cases:
-            
+
             # Should work
             if not isinstance(signal.val, bool):
                 correct_val_range = (signal.min, signal.max)
-            
+
                 if signal.min < 0:
                     signed = True
                 else:
@@ -95,40 +97,40 @@ class TestCheckIntbvSignal(TestCase):
             # smaller range should fail
             self.assertRaisesRegex(
                 ValueError, 'Port %s.min should be >= %d and port %s.max '
-                'should be <= %d.' % 
-                (name, smaller_range[0], name, smaller_range[1]), 
+                'should be <= %d.' %
+                (name, smaller_range[0], name, smaller_range[1]),
                 check_intbv_signal, signal, name, val_range=smaller_range,
                 range_test='inside')
 
     def test_intbv_range_outside(self):
-        '''Setting the val_range and range_test='outside' should check the 
+        '''Setting the val_range and range_test='outside' should check the
         range of the signal is inclusively outside the val_range supplied.
 
-        The val_range should be defined by list-like object with the first 
-        value giving the maximum expected inclusive minimum value of the intbv 
-        and the second value giving the minimum expected exclusive maximum 
+        The val_range should be defined by list-like object with the first
+        value giving the maximum expected inclusive minimum value of the intbv
+        and the second value giving the minimum expected exclusive maximum
         value of the intbv.
 
         That is, if val_range = (n, p), the min attribute of the signal should
         be <= n and the max attribute should be >= p.
         '''
         test_cases = (
-            ('foo', Signal(intbv(200, min=100, max=500)), 
+            ('foo', Signal(intbv(200, min=100, max=500)),
              (101, 499), (0, 501)),
             ('foo2', Signal(intbv(0)[5:]), (0, 2**5 - 1), (0, 2**5 + 1)),
             ('bar', Signal(intbv(0, min=-40, max=50)), (-40, 49), (-40, 51)),
             ('boo', Signal(intbv(0, min=-40, max=50)), (-39, 50), (-41, 50)),
-            ('baz', Signal(intbv(10, min=-(2**10), max=2**10)), 
+            ('baz', Signal(intbv(10, min=-(2**10), max=2**10)),
              (-1023, 1024), (-1025, 1024)),
             ('bleh', Signal(bool(0)), (0, 1), (0, 3))
         )
 
         for name, signal, smaller_range, bigger_range in test_cases:
-            
+
             # Should work
             if not isinstance(signal.val, bool):
                 correct_val_range = (signal.min, signal.max)
-            
+
                 if signal.min < 0:
                     signed = True
                 else:
@@ -147,40 +149,40 @@ class TestCheckIntbvSignal(TestCase):
             # bigger range should fail
             self.assertRaisesRegex(
                 ValueError, 'Port %s.min should be <= %d and port %s.max '
-                'should be >= %d.' % 
-                (name, bigger_range[0], name, bigger_range[1]), 
+                'should be >= %d.' %
+                (name, bigger_range[0], name, bigger_range[1]),
                 check_intbv_signal, signal, name, val_range=bigger_range,
                 range_test='outside')
 
 
     def test_intbv_range_exact(self):
-        '''Setting the val_range and range_test='exact' should check the 
+        '''Setting the val_range and range_test='exact' should check the
         range of the signal is exactly the val_range supplied.
 
-        The val_range should be defined by list-like object with the first 
-        value giving the expected minimum value of the intbv 
+        The val_range should be defined by list-like object with the first
+        value giving the expected minimum value of the intbv
         and the second value giving the expected maximum value of the intbv.
 
         That is, if val_range = (n, p), the min attribute of the signal should
         be == n and the max attribute should be == p.
         '''
         test_cases = (
-            ('foo', Signal(intbv(200, min=100, max=500)), 
+            ('foo', Signal(intbv(200, min=100, max=500)),
              (101, 499), (0, 501)),
             ('foo2', Signal(intbv(0)[5:]), (0, 2**5 - 1), (0, 2**5 + 1)),
             ('bar', Signal(intbv(0, min=-40, max=50)), (-40, 49), (-40, 51)),
             ('boo', Signal(intbv(0, min=-40, max=50)), (-39, 50), (-41, 50)),
-            ('baz', Signal(intbv(10, min=-(2**10), max=2**10)), 
+            ('baz', Signal(intbv(10, min=-(2**10), max=2**10)),
              (-1023, 1024), (-1025, 1024)),
             ('bleh', Signal(bool(0)), (0, 1), (0, 3))
         )
 
         for name, signal, smaller_range, bigger_range in test_cases:
-            
+
             # Should work
             if not isinstance(signal.val, bool):
                 correct_val_range = (signal.min, signal.max)
-            
+
                 if signal.min < 0:
                     signed = True
                 else:
@@ -197,16 +199,16 @@ class TestCheckIntbvSignal(TestCase):
             # smaller range should fail
             self.assertRaisesRegex(
                 ValueError, 'Port %s.min should be == %d and port %s.max '
-                'should be == %d.' % 
-                (name, smaller_range[0], name, smaller_range[1]), 
+                'should be == %d.' %
+                (name, smaller_range[0], name, smaller_range[1]),
                 check_intbv_signal, signal, name, val_range=smaller_range,
                 range_test='exact')
 
             # bigger range should fail
             self.assertRaisesRegex(
                 ValueError, 'Port %s.min should be == %d and port %s.max '
-                'should be == %d.' % 
-                (name, bigger_range[0], name, bigger_range[1]), 
+                'should be == %d.' %
+                (name, bigger_range[0], name, bigger_range[1]),
                 check_intbv_signal, signal, name, val_range=bigger_range,
                 range_test='exact')
 
@@ -222,7 +224,7 @@ class TestCheckIntbvSignal(TestCase):
             '\'outside\' or \'exact\'',
             check_intbv_signal, signal, 'signal', val_range=val_range,
             range_test='invalid')
- 
+
     def test_None_signed_inferred_from_signal(self):
         '''If signed is not set or set to None, it should be inferred.
         '''
@@ -252,7 +254,7 @@ class TestCheckIntbvSignal(TestCase):
 
             # signed True should raise
             self.assertRaisesRegex(
-                ValueError, 'Port %s should be a signed intbv signal.' % 
+                ValueError, 'Port %s should be a signed intbv signal.' %
                 (name,), check_intbv_signal, signal, name, width, True)
 
     def test_signed_true_bool_fails(self):
@@ -269,7 +271,7 @@ class TestCheckIntbvSignal(TestCase):
         '''
         test_cases = (
             ('bat', Signal(intbv(-1, min=-1, max=1)), 1),
-            ('bat', Signal(intbv(0, min=-1, max=1)), 1),            
+            ('bat', Signal(intbv(0, min=-1, max=1)), 1),
             ('bat', Signal(intbv(9, min=-20, max=10)), 6),
             ('boo', Signal(intbv(-20, min=-100, max=0)), 8))
 
@@ -279,7 +281,7 @@ class TestCheckIntbvSignal(TestCase):
 
             # signed False should raise
             self.assertRaisesRegex(
-                ValueError, 'Port %s should be an unsigned intbv signal.' % 
+                ValueError, 'Port %s should be an unsigned intbv signal.' %
                 (name,), check_intbv_signal, signal, name, width, False)
 
     def test_unlengthed_signal_fails(self):
@@ -291,7 +293,7 @@ class TestCheckIntbvSignal(TestCase):
 
         for name, signal, width, signed in failing_test_cases:
             self.assertRaisesRegex(
-                ValueError, 'Port %s must have a defined length signal.' % 
+                ValueError, 'Port %s must have a defined length signal.' %
                 (name,), check_intbv_signal, signal, name, width, signed)
 
     def test_non_single_bit_val_is_correct_type(self):
@@ -313,7 +315,7 @@ class TestCheckIntbvSignal(TestCase):
         for name, signal, width, signed in failing_test_cases:
             self.assertRaisesRegex(
                 ValueError, 'Port %s signal of width %d should be a '
-                'fixed width intbv value.' % (name, width), 
+                'fixed width intbv value.' % (name, width),
                 check_intbv_signal, signal, name, width, signed)
 
     def test_port_width_wrong_raises(self):
@@ -333,9 +335,9 @@ class TestCheckIntbvSignal(TestCase):
 
             # Should raise
             self.assertRaisesRegex(
-                ValueError, 
-                'Port %s should be %d bits wide' % (name, incorrect_width,), 
-                check_intbv_signal, test_signal, name, incorrect_width, 
+                ValueError,
+                'Port %s should be %d bits wide' % (name, incorrect_width,),
+                check_intbv_signal, test_signal, name, incorrect_width,
                 signed)
 
 
@@ -348,7 +350,7 @@ class TestCheckBoolSignal(TestCase):
         '''The test signal should be an instance of _Signal
         '''
         self.assertRaisesRegex(
-            ValueError, 'Port %s should be a bool Signal' % ('foo',), 
+            ValueError, 'Port %s should be a bool Signal' % ('foo',),
             check_bool_signal, 'not a signal', 'foo')
 
     def test_single_bit_intbv_check(self):
@@ -356,14 +358,14 @@ class TestCheckBoolSignal(TestCase):
         '''
         failing_test_cases = (
             ('foo', Signal(intbv(10))),
-            ('foo', Signal(intbv(0)[5:])),            
+            ('foo', Signal(intbv(0)[5:])),
             ('bar', Signal(intbv(0)[2:])),
             ('bar', Signal(intbv(0))))
 
         for name, signal in failing_test_cases:
             self.assertRaisesRegex(
                 ValueError, 'Port %s signal: intbv signals should only be a '
-                'single bit.' % (name,), 
+                'single bit.' % (name,),
                 check_bool_signal, signal, name)
 
     def test_val_type_check(self):
@@ -381,14 +383,14 @@ class TestCheckBoolSignal(TestCase):
 
         failing_test_cases = (
             ('foo', Signal('bleh')),
-            ('foo', Signal(test_enum.a)),            
+            ('foo', Signal(test_enum.a)),
             ('bar', Signal((10))),
             ('bar', Signal(0)))
 
         for name, signal in failing_test_cases:
             self.assertRaisesRegex(
                 ValueError, 'Port %s signal should be a boolean value or a '
-                'single bit intbv value.' % (name,), 
+                'single bit intbv value.' % (name,),
                 check_bool_signal, signal, name)
 
 class TestCheckResetSignal(TestCase):
@@ -399,7 +401,7 @@ class TestCheckResetSignal(TestCase):
         '''The test signal should be an instance of ResetSignal
         '''
         self.assertRaisesRegex(
-            ValueError, 'Port %s should be a ResetSignal' % ('foo',), 
+            ValueError, 'Port %s should be a ResetSignal' % ('foo',),
             check_reset_signal, Signal(bool(0)), 'foo', False, False)
 
     def test_async_correct(self):
@@ -411,7 +413,7 @@ class TestCheckResetSignal(TestCase):
 
         name = 'foo'
         for async in (True, False):
-            
+
             test_signal = ResetSignal(0, active=True, async=async)
 
             # Should pass fine
@@ -419,8 +421,8 @@ class TestCheckResetSignal(TestCase):
 
             self.assertRaisesRegex(
                 ValueError, 'Port %s reset signal should have the expected'
-                ' async flag.' % (name,), 
-                check_reset_signal, test_signal, name, active=True, 
+                ' async flag.' % (name,),
+                check_reset_signal, test_signal, name, active=True,
                 async=not async)
 
     def test_active_correct(self):
@@ -432,7 +434,7 @@ class TestCheckResetSignal(TestCase):
 
         name = 'foo'
         for active in (True, False):
-            
+
             test_signal = ResetSignal(0, active=active, async=False)
 
             # Should pass fine
@@ -440,7 +442,7 @@ class TestCheckResetSignal(TestCase):
 
             self.assertRaisesRegex(
                 ValueError, 'Port %s reset signal should have the expected'
-                ' active flag.' % (name,), 
-                check_reset_signal, test_signal, name, active=not active, 
+                ' active flag.' % (name,),
+                check_reset_signal, test_signal, name, active=not active,
                 async=False)
 
