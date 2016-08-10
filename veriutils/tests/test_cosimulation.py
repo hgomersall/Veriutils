@@ -573,6 +573,9 @@ class CosimulationTestMixin(object):
 
         Though it should not be enforced, an `axi_stream_in` interface
         should be driven through a user defined `custom_source` block.
+
+        If the axi stream master sets TVALID to False at any point, this
+        should be played back as well.
         '''
         self.clock = Signal(bool(1))
         self.test_in = AxiStreamInterface()
@@ -602,6 +605,8 @@ class CosimulationTestMixin(object):
         self.default_arg_types = {'axi_interface_in': 'axi_stream_in',
                                   'axi_interface_out': 'axi_stream_out',
                                   'clock': 'clock'}
+
+        axi_output_monitor = AxiStreamSlaveBFM()
 
         @block
         def axi_identity(clock, axi_interface_in, axi_interface_out):
@@ -639,7 +644,10 @@ class CosimulationTestMixin(object):
             return assign_signals
 
         master_bfm = AxiStreamMasterBFM()
-        custom_sources = [(master_bfm.model, (self.clock, self.test_in), {})]
+        custom_sources = [
+            (master_bfm.model, (self.clock, self.test_in), {}),
+            (axi_output_monitor.model, (self.clock, self.test_out),
+             {'TREADY_probability': None})]
 
 
         None_trimmed_packet_list = [
@@ -667,6 +675,22 @@ class CosimulationTestMixin(object):
         self.assertEqual(
             dut_results['axi_interface_out']['packets'],
             incremented_trimmed_packets)
+
+        # Now check the invalids were set appropriately
+        flattened_packet_list = [
+            val for packet in packet_list for val in packet]
+
+        # We ignore the first 3 cycles in the dut results. This corresponds
+        # to the pipeline delay from turn on to visibility at the output
+        # for axi_offset_increment above.
+        dut_out_invalids = [
+            each['TVALID'] for each in
+            dut_results['axi_interface_out']['signals'][3:]]
+
+        packet_invalids = [
+            False if val is None else True for val in flattened_packet_list]
+
+        self.assertEqual(dut_out_invalids, packet_invalids)
 
     def test_axi_stream_in_no_TLAST_argument(self):
         '''It should be possible to use an axi stream interface with no TLAST

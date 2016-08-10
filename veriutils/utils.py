@@ -3,17 +3,18 @@ from myhdl import intbv
 import myhdl
 from math import log, floor
 
-__all__ = ['check_intbv_signal', 'check_bool_signal', 'check_reset_signal']
+__all__ = ['check_intbv_signal', 'check_bool_signal', 'check_reset_signal',
+           'signed_intbv_list_to_unsigned', 'unsigned_intbv_list_to_signed']
 
-def check_intbv_signal(test_signal, name, correct_width=None, signed=None, 
+def check_intbv_signal(test_signal, name, correct_width=None, signed=None,
                        val_range=None, range_test='inside'):
-    '''Check the passed signal is a satisfactory convertible signal. If it 
+    '''Check the passed signal is a satisfactory convertible signal. If it
     is not, raise a ValueError with a suitable error message.
 
-    The range is set from one of either ``correct_width`` and (optionally) 
+    The range is set from one of either ``correct_width`` and (optionally)
     ``signed`` or ``val_range``.
 
-    The three possible values for ``range_test`` are ``'inside'``, 
+    The three possible values for ``range_test`` are ``'inside'``,
     ``'outside'`` and ``'exact'``. For values ``val_range = (n, p)``, each
     asserts the following is true:
         ``'inside'``: ``test_signal.min >= n``, ``test_signal.max <= p``
@@ -44,7 +45,7 @@ def check_intbv_signal(test_signal, name, correct_width=None, signed=None,
 
     if val_range is None:
         val_range = (signal_min, signal_max)
-    
+
     if signed is None:
         if val_range[0] < 0:
             signed = True
@@ -54,31 +55,31 @@ def check_intbv_signal(test_signal, name, correct_width=None, signed=None,
     if correct_width > 1:
         if not isinstance(test_signal.val, intbv):
             raise ValueError('Port %s signal of width %d should be a '
-                             'fixed width intbv value.' % 
+                             'fixed width intbv value.' %
                              (name, correct_width))
     else:
         if not isinstance(test_signal.val, (intbv, bool)):
             raise ValueError('Port %s signal of width %d should be a '
-                             'single bit intbv value or a boolean value.' % 
+                             'single bit intbv value or a boolean value.' %
                              (name, correct_width))
 
     if len(test_signal) == 0:
-        raise ValueError('Port %s must have a defined length signal.' % 
+        raise ValueError('Port %s must have a defined length signal.' %
                          (name,))
 
     if len(test_signal) != correct_width:
-        raise ValueError('Port %s should be %d bits wide' % 
+        raise ValueError('Port %s should be %d bits wide' %
                          (name, correct_width))
 
     if signed and isinstance(test_signal.val, bool):
         raise ValueError('Port %s: A boolean signal should not be implicitly '
             'signed. Use a signed intbv signal instead.' % (name,))
-            
+
     elif signed and test_signal.min >= 0:
         raise ValueError('Port %s should be a signed intbv signal.' %
                          (name,))
 
-    elif (isinstance(test_signal.val, intbv) and not signed 
+    elif (isinstance(test_signal.val, intbv) and not signed
           and test_signal.min < 0): # pragma: no branch
         raise ValueError('Port %s should be an unsigned intbv signal.' %
                          (name,))
@@ -86,19 +87,19 @@ def check_intbv_signal(test_signal, name, correct_width=None, signed=None,
     if range_test == 'inside':
         if signal_min < val_range[0] or signal_max > val_range[1]:
             raise ValueError('Port %s.min should be >= %d and port %s.max '
-                             'should be <= %d.' % 
+                             'should be <= %d.' %
                              (name, val_range[0], name, val_range[1]))
 
     elif range_test == 'outside':
         if signal_min > val_range[0] or signal_max < val_range[1]:
             raise ValueError('Port %s.min should be <= %d and port %s.max '
-                             'should be >= %d.' % 
+                             'should be >= %d.' %
                              (name, val_range[0], name, val_range[1]))
 
     elif range_test == 'exact':
         if signal_min != val_range[0] or signal_max != val_range[1]:
             raise ValueError('Port %s.min should be == %d and port %s.max '
-                             'should be == %d.' % 
+                             'should be == %d.' %
                              (name, val_range[0], name, val_range[1]))
 
     else:
@@ -106,7 +107,7 @@ def check_intbv_signal(test_signal, name, correct_width=None, signed=None,
                          '\'outside\' or \'exact\'')
 
 def check_bool_signal(test_signal, name):
-    
+
     if not isinstance(test_signal, myhdl._Signal._Signal):
         raise ValueError('Port %s should be a bool Signal' % (name,))
 
@@ -119,7 +120,7 @@ def check_bool_signal(test_signal, name):
                           'single bit.' % (name,))
 
 def check_reset_signal(test_signal, name, active, async):
-    
+
     if not isinstance(test_signal, myhdl.ResetSignal):
         raise ValueError('Port %s should be a ResetSignal' % (name,))
 
@@ -130,3 +131,15 @@ def check_reset_signal(test_signal, name, active, async):
     if test_signal.active != active:
         raise ValueError('Port %s reset signal should have the expected'
                          ' active flag.' % (name,))
+
+def signed_intbv_list_to_unsigned(signed_list):
+
+    unsigned_list = [val[len(val):] for val in signed_list]
+
+    return unsigned_list
+
+def unsigned_intbv_list_to_signed(unsigned_list):
+
+    signed_list = [val.signed() for val in unsigned_list]
+
+    return signed_list

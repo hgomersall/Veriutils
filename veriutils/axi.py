@@ -254,9 +254,22 @@ class AxiStreamSlaveBFM(object):
         return [copy.copy(val) for val in self._current_packet]
 
     @property
+    def current_packet_with_validity(self):
+        return [copy.copy(val) for val in self._current_packet_with_validity]
+
+    @property
     def completed_packets(self):
         copied_completed_packets = []
         for packet in self._completed_packets:
+            copied_completed_packets.append(
+                [copy.copy(val) for val in packet])
+
+        return copied_completed_packets
+
+    @property
+    def completed_packets_with_validity(self):
+        copied_completed_packets = []
+        for packet in self._completed_packets_with_validity:
             copied_completed_packets.append(
                 [copy.copy(val) for val in packet])
 
@@ -284,6 +297,8 @@ class AxiStreamSlaveBFM(object):
         '''
         self._completed_packets = []
         self._current_packet = []
+        self._completed_packets_with_validity = []
+        self._current_packet_with_validity = []
 
     @block
     def model(self, clock, interface, TREADY_probability=1.0):
@@ -334,14 +349,22 @@ class AxiStreamSlaveBFM(object):
             if interface.TVALID and interface.TREADY:
                 self._current_packet.append(
                     copy.copy(int(interface.TDATA._val)))
+                self._current_packet_with_validity.append(
+                    copy.copy(int(interface.TDATA._val)))
 
                 if internal_TLAST:
                     # End of a packet, so copy the current packet into
                     # complete_packets and empty the current packet.
                     self._completed_packets.append(
                         copy.copy(self._current_packet))
+                    self._completed_packets_with_validity.append(
+                        copy.copy(self._current_packet_with_validity))
 
                     del self._current_packet[:]
+                    del self._current_packet_with_validity[:]
+
+            elif not interface.TVALID and interface.TREADY:
+                self._current_packet_with_validity.append(None)
 
         return_instances = [model_inst, assign_TLAST]
 

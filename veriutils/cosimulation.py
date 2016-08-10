@@ -1303,10 +1303,10 @@ class SynchronousTest(object):
             axi_bfm = self.axi_stream_in_ref_bfms[axi_interface_name]
             axi_interface = self.axi_stream_in_ref_interfaces[
                 axi_interface_name]
-            packets = axi_bfm.completed_packets
+            packets = axi_bfm.completed_packets_with_validity
 
             if len(axi_bfm.current_packet) > 0:
-                packets.append(axi_bfm.current_packet)
+                packets.append(axi_bfm.current_packet_with_validity)
                 instances.append(
                     axi_master_playback(clock, axi_interface, packets,
                                         incomplete_last_packet=True))

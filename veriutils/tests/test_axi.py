@@ -1124,6 +1124,7 @@ class TestAxiStreamSlaveBFM(TestCase):
                         trimmed_packet_list[:packets_to_check],
                         test_sink.completed_packets[:packets_to_check]):
 
+                        self.assertTrue(len(ref_packet) == len(test_packet))
                         self.assertTrue(all(ref == test for ref, test in
                                             zip(ref_packet, test_packet)))
 
@@ -1151,6 +1152,95 @@ class TestAxiStreamSlaveBFM(TestCase):
 
             trimmed_packet_list = [
                 packet for packet in packet_list if len(packet) > 0]
+
+            myhdl_cosimulation(
+                None, None, testbench, self.args, self.arg_types)
+
+    def test_completed_packets_with_validity_property(self):
+        '''There should be a ``completed_packets_with_validity`` property that
+        records all the complete packets that have been received with the
+        addition of ``None`` values in the packet when the AXI stream master
+        had set ``TVALID`` to False.
+
+        It should be the case that a ``None`` should never be the last value
+        in a packet.
+
+        This property should not contain not yet completed packets.
+        '''
+        @block
+        def testbench(clock):
+
+            test_sink = self.test_sink
+
+            master = self.source_stream.model(clock, self.interface)
+            slave = test_sink.model(clock, self.interface)
+
+            check_packet_next_time = Signal(False)
+            checker_data = {'packets_to_check': 0}
+
+            @always(clock.posedge)
+            def checker():
+
+                if self.interface.TLAST:
+                    check_packet_next_time.next = True
+                    checker_data['packets_to_check'] += 1
+
+                if check_packet_next_time:
+                    check_packet_next_time.next = False
+                    packets_to_check = checker_data['packets_to_check']
+                    for ref_packet, test_packet in zip(
+                        corrected_packet_list[:packets_to_check],
+                        test_sink.completed_packets_with_validity[
+                            :packets_to_check]):
+
+                        self.assertTrue(len(ref_packet) == len(test_packet))
+                        self.assertTrue(all(ref == test for ref, test in
+                                            zip(ref_packet, test_packet)))
+
+
+                    if packets_to_check >= len(corrected_packet_list):
+                        raise StopSimulation
+
+                if len(corrected_packet_list) == 0:
+                    # The no data case
+                    raise StopSimulation
+
+
+            return master, slave, checker
+
+        for n in range(30):
+            # lots of test cases
+
+            # We need new BFMs for every run
+            self.source_stream = AxiStreamMasterBFM()
+            self.test_sink = AxiStreamSlaveBFM()
+
+            packet_list, trimmed_packets, total_data_len = (
+                _generate_random_packets_with_Nones(
+                    self.data_byte_width, self.max_packet_length,
+                    self.max_new_packets))
+
+            packet_list = [list(packet) for packet in packet_list]
+            _add_packets_to_stream(self.source_stream, packet_list)
+
+            # Separate out trailing Nones to add to the next packet
+            corrected_packet_list = []
+            previous_trailing_values = []
+            for packet in packet_list:
+
+                this_packet = previous_trailing_values + packet
+
+                if this_packet == []:
+                    continue
+
+                slice_idx = 0
+                for i, val in enumerate(this_packet):
+                    if val is not None:
+                        slice_idx = i + 1
+
+                if len(this_packet[:slice_idx]) > 0:
+                    corrected_packet_list.append(this_packet[:slice_idx])
+                previous_trailing_values = this_packet[slice_idx:]
 
             myhdl_cosimulation(
                 None, None, testbench, self.args, self.arg_types)
@@ -1291,7 +1381,9 @@ class TestAxiStreamSlaveBFM(TestCase):
 
     def test_current_packet_property(self):
         '''There should be a ``current_packet`` property that returns the
-        packet that is currently being recorded and has not yet completed.
+        packet that is currently being recorded and has not yet completed
+        with the addition of ``None`` values in the packet when the AXI
+        stream master had set ``TVALID`` to False.
         '''
         @block
         def testbench(clock):
@@ -1358,7 +1450,101 @@ class TestAxiStreamSlaveBFM(TestCase):
             myhdl_cosimulation(
                 None, None, testbench, self.args, self.arg_types)
 
-    def test_TVALID_low_not_recorded(self):
+    def test_current_packet_with_validity_property(self):
+        '''There should be a ``current_packet_with_validity`` property that
+        returns the packet that is currently being recorded and has not yet
+        completed.
+        '''
+        @block
+        def testbench(clock):
+
+            test_sink = self.test_sink
+
+            master = self.source_stream.model(clock, self.interface)
+            slave = test_sink.model(clock, self.interface)
+
+            check_packet_next_time = Signal(False)
+            checker_data = {
+                'data_in_packet': 0,
+                'current_packet_idx': 0}
+
+            @always(clock.posedge)
+            def checker():
+                if (len(test_sink.completed_packets) ==
+                    len(corrected_packet_list)):
+                    raise StopSimulation
+
+                if (self.interface.TREADY and self.interface.TVALID and
+                      self.interface.TLAST):
+
+                    checker_data['data_in_packet'] = 0
+                    checker_data['current_packet_idx'] += 1
+
+                elif self.interface.TREADY:
+
+                    checker_data['data_in_packet'] += 1
+
+                    expected_length = checker_data['data_in_packet']
+                    packet_length = len(
+                        test_sink.current_packet_with_validity)
+
+                    # depending on whether this has run first or the dut
+                    # has run first, we might be one value difference in
+                    # length
+                    self.assertTrue(
+                        packet_length == expected_length
+                        or packet_length == (expected_length - 1))
+
+                    packet_idx = checker_data['current_packet_idx']
+                    expected_packet = (
+                        corrected_packet_list[packet_idx][:packet_length])
+
+                    self.assertTrue(
+                        all(ref == test for ref, test in
+                            zip(expected_packet,
+                                test_sink.current_packet_with_validity)))
+
+
+            return master, slave, checker
+
+        for n in range(30):
+            # lots of test cases
+
+            # We need new BFMs for every run
+            self.source_stream = AxiStreamMasterBFM()
+            self.test_sink = AxiStreamSlaveBFM()
+
+            packet_list, trimmed_packets, total_data_len = (
+                _generate_random_packets_with_Nones(
+                    self.data_byte_width, self.max_packet_length,
+                    self.max_new_packets))
+
+            packet_list = [list(packet) for packet in packet_list]
+            _add_packets_to_stream(self.source_stream, packet_list)
+
+            # Separate out trailing Nones to add to the next packet
+            corrected_packet_list = []
+            previous_trailing_values = []
+            for packet in packet_list:
+
+                this_packet = previous_trailing_values + packet
+
+                if this_packet == []:
+                    continue
+
+                slice_idx = 0
+                for i, val in enumerate(this_packet):
+                    if val is not None:
+                        slice_idx = i + 1
+
+                if len(this_packet[:slice_idx]) > 0:
+                    corrected_packet_list.append(this_packet[:slice_idx])
+                previous_trailing_values = this_packet[slice_idx:]
+
+            myhdl_cosimulation(
+                None, None, testbench, self.args, self.arg_types)
+
+    def test_TVALID_low_default_not_recorded(self):
         '''If TVALID is unset on the master interface the values on the line
         should not be recorded.
         '''
