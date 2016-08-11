@@ -81,13 +81,13 @@ begin
 $clock <= '%d';
 while True loop
     wait for $even_period ns;
-    $clock <= '%d';
+    $clock <= not $clock;
     wait for $odd_period ns;
-    $clock <= '%d';
+    $clock <= not $clock;
 end loop;
 wait;
 end process CLOCK_SOURCE_CLOCKGEN;
-''' % (start_val, not_start_val, start_val)
+''' % (start_val,)
 
     clock.driven = 'reg'
 

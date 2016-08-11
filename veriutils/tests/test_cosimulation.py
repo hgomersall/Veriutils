@@ -577,7 +577,18 @@ class CosimulationTestMixin(object):
         If the axi stream master sets TVALID to False at any point, this
         should be played back as well.
         '''
-        self.clock = Signal(bool(1))
+
+        # It seems the way in which sensitivity of initial values is
+        # different between Verilog and VHDL. Assigning clock to '1' with
+        # verilog means the posedge clock sensitivity is triggered. This seems
+        # odd to me but is certainly true for at least the Vivado verilog
+        # simulator.
+        #
+        # Anyway, the upshot of this is we need to choose a start signal that
+        # means the result is the same for VHDL and Verilog, so clock should
+        # be initialised to 0.
+
+        self.clock = Signal(bool(0))
         self.test_in = AxiStreamInterface()
         self.test_out = AxiStreamInterface()
 
