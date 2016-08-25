@@ -969,6 +969,105 @@ class CosimulationTestMixin(object):
         for signal in dut_results:
             self.assertEqual(dut_results[signal], ref_results[signal])
 
+    def test_boolean_data_case(self):
+        '''The test object with identity factories and a boolean signal
+        should pass every time'''
+
+        sim_cycles = 30
+        self.test_in = Signal(bool(0))
+        self.test_out = Signal(bool(0))
+
+        self.default_args['test_input'] = self.test_in
+        self.default_args['test_output'] = self.test_out
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, self.identity_factory, self.identity_factory,
+            self.default_args, self.default_arg_types)
+
+        if self.check_mocks:
+            # The mock should be called twice per cycle, with the caveat that
+            # it is not called at all on the reset cycles.
+            assert len(self.sim_checker.call_args_list) == (
+                (sim_cycles - self.reset_cycles) * 2)
+
+            # The expected calls are found from what is recorded on the output.
+            # These are recorded even during reset cycles, so we need to offset
+            # those.
+            # Also we record one cycle delayed from the sim_checker mock above,
+            # so we need to offset left by that too.
+            dut_expected_mock_calls = [
+                mock.call(each) for each in
+                dut_results['test_output'][self.reset_cycles:][1:]]
+            ref_expected_mock_calls = [
+                mock.call(each) for each in
+                ref_results['test_output'][self.reset_cycles:][1:]]
+
+            # The sim checker args should be shifted up by one sample since
+            # they record a sample earlier than the recorded outputs.
+            out_signals = zip(self.sim_checker.call_args_list[::2][:-1],
+                              self.sim_checker.call_args_list[1::2][:-1],
+                              dut_expected_mock_calls,
+                              ref_expected_mock_calls)
+
+            for dut_arg, ref_arg, expected_dut, expected_ref in out_signals:
+                # Should be true (defined by the test)
+                assert dut_arg == ref_arg
+
+                self.assertEqual(dut_arg, expected_dut)
+                self.assertEqual(ref_arg, expected_ref)
+
+        for signal in dut_results:
+            self.assertEqual(dut_results[signal], ref_results[signal])
+
+    def test_single_bit_vector_data_case(self):
+        '''The test object with identity factories and a single bit intbv
+        (i.e. not a bool type) should pass every time'''
+
+        sim_cycles = 30
+        self.test_in = Signal(intbv(0)[1:])
+        self.test_out = Signal(intbv(0)[1:])
+
+        self.default_args['test_input'] = self.test_in
+        self.default_args['test_output'] = self.test_out
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, self.identity_factory, self.identity_factory,
+            self.default_args, self.default_arg_types)
+
+        if self.check_mocks:
+            # The mock should be called twice per cycle, with the caveat that
+            # it is not called at all on the reset cycles.
+            assert len(self.sim_checker.call_args_list) == (
+                (sim_cycles - self.reset_cycles) * 2)
+
+            # The expected calls are found from what is recorded on the output.
+            # These are recorded even during reset cycles, so we need to offset
+            # those.
+            # Also we record one cycle delayed from the sim_checker mock above,
+            # so we need to offset left by that too.
+            dut_expected_mock_calls = [
+                mock.call(each) for each in
+                dut_results['test_output'][self.reset_cycles:][1:]]
+            ref_expected_mock_calls = [
+                mock.call(each) for each in
+                ref_results['test_output'][self.reset_cycles:][1:]]
+
+            # The sim checker args should be shifted up by one sample since
+            # they record a sample earlier than the recorded outputs.
+            out_signals = zip(self.sim_checker.call_args_list[::2][:-1],
+                              self.sim_checker.call_args_list[1::2][:-1],
+                              dut_expected_mock_calls,
+                              ref_expected_mock_calls)
+
+            for dut_arg, ref_arg, expected_dut, expected_ref in out_signals:
+                # Should be true (defined by the test)
+                assert dut_arg == ref_arg
+
+                self.assertEqual(dut_arg, expected_dut)
+                self.assertEqual(ref_arg, expected_ref)
+
+        for signal in dut_results:
+            self.assertEqual(dut_results[signal], ref_results[signal])
 
     def test_disagreeing_outputs(self):
         '''When the factories disagree, the results should not be the same.

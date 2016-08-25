@@ -65,7 +65,7 @@ def file_writer(filename, signal_list, clock, signal_names=None):
                 '$$fwrite(output_file, \"%s\");' % signal_names[n])
 
 
-        if len(each_signal) == 1:
+        if isinstance(each_signal._val, bool):
             vhdl_signal_str_write_list.append(
                 'write(output_line, std_logic($signal_%d));' % n)
         else:
@@ -190,7 +190,7 @@ def axi_stream_file_writer(
                 '$$fwrite(output_file, \"%s\");' % each_signal_name)
 
 
-        if len(each_signal) == 1:
+        if isinstance(each_signal._val, bool):
             vhdl_signal_str_write_list.append(
                 'write(output_line, std_logic($signal_%s));' %
                 each_signal_name)
