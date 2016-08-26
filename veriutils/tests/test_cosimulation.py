@@ -410,8 +410,8 @@ class CosimulationTestMixin(object):
         self.test_in = AxiStreamInterface()
         self.test_out = AxiStreamInterface()
 
-        max_packet_length = 20
-        max_new_packets = 50
+        max_packet_length = 10
+        max_new_packets = 20
         max_val = 2**(8 * self.test_out.bus_width)
 
         def val_gen():
@@ -426,6 +426,10 @@ class CosimulationTestMixin(object):
             [val_gen() for m
              in range(random.randrange(3, max_packet_length))] for n
             in range(random.randrange(3, max_new_packets))]
+
+        # force the last packet to always have at least one value in
+        # (otherwise the trimming below will break)
+        packet_list[-1][0] = random.randrange(0, max_val)
 
         self.default_args = {'axi_interface_in': self.test_in,
                              'axi_interface_out': self.test_out,
@@ -452,7 +456,7 @@ class CosimulationTestMixin(object):
             return assign_signals
 
 
-        sim_cycles = sum(len(packet) for packet in packet_list) + 1
+        sim_cycles = sum(len(packet) for packet in packet_list) + 10
 
         None_trimmed_packet_list = [
             [val for val in packet if val is not None] for packet in
@@ -819,8 +823,8 @@ class CosimulationTestMixin(object):
         self.test_in = AxiStreamInterface()
         self.test_out = AxiStreamInterface()
 
-        max_packet_length = 20
-        max_new_packets = 50
+        max_packet_length = 10
+        max_new_packets = 20
         max_val = 2**(8 * self.test_out.bus_width) - 1
 
         def val_gen():
@@ -835,6 +839,10 @@ class CosimulationTestMixin(object):
             [val_gen() for m
              in range(random.randrange(3, max_packet_length))] for n
             in range(random.randrange(3, max_new_packets))]
+
+        # force the last packet to always have at least one value in
+        # (otherwise the trimming below will break)
+        packet_list[-1][0] = random.randrange(0, max_val)
 
         self.default_args = {'axi_interface_in': self.test_in,
                              'axi_interface_out': self.test_out,

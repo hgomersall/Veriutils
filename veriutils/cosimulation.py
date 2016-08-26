@@ -460,13 +460,7 @@ def _create_flattened_args(args, arg_types):
 
         else:
             # The interface case
-            name_idx = 0
-            sig_n = 0
-            while True:
-                interface_name = each_signal_name + str(name_idx)
-                name_idx += 1
-                if interface_name not in arg_list:
-                    break
+            interface_name = each_signal_name
 
             # The following currently only works with one level of
             # interface hierarchy
@@ -1176,7 +1170,9 @@ class SynchronousTest(object):
             elif flattened_arg_types[each_signal_name] == 'init_reset':
                 # This should be played back
                 drive_list = tuple(flattened_ref_outputs[each_signal_name])
-                instances.append(lut_signal_driver(reset, drive_list, clock))
+                instances.append(lut_signal_driver(
+                    reset, drive_list, clock, signal_name=each_signal_name))
+
                 flattened_dut_args[each_signal_name] = reset
                 #instances.append(init_reset_source(reset, clock))
                 #flattened_dut_args[each_signal_name] = reset
@@ -1191,7 +1187,8 @@ class SynchronousTest(object):
             elif flattened_arg_types[each_signal_name] == 'custom_reset':
                 # This should be played back
                 drive_list = tuple(flattened_ref_outputs[each_signal_name])
-                instances.append(lut_signal_driver(reset, drive_list, clock))
+                instances.append(lut_signal_driver(
+                    reset, drive_list, clock, signal_name=each_signal_name))
                 flattened_dut_args[each_signal_name] = reset
 
             elif flattened_arg_types[each_signal_name] == 'axi_stream_out':
@@ -1213,7 +1210,8 @@ class SynchronousTest(object):
                 drive_list = tuple(flattened_ref_outputs[each_signal_name])
                 locals()[each_signal_name] = each_signal
                 instances.append(lut_signal_driver(
-                    locals()[each_signal_name], drive_list, clock))
+                    locals()[each_signal_name], drive_list, clock,
+                    signal_name=each_signal_name))
 
                 flattened_dut_args[each_signal_name] = (
                     locals()[each_signal_name])

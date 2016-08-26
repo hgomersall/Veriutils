@@ -11,6 +11,8 @@ import tempfile
 import shutil
 from math import log
 
+import os
+
 
 class TestSignalCopy(TestCase):
     '''There should be a function that returns a copy of its argument,
@@ -64,7 +66,7 @@ class TestSignalCopy(TestCase):
     def test_interface_copy(self):
         '''It should be possible to copy interfaces.
 
-        The copied signals should have the same min and max values.        
+        The copied signals should have the same min and max values.
         '''
         class Interface(object):
             def __init__(self):
@@ -78,7 +80,7 @@ class TestSignalCopy(TestCase):
         self.assertEqual(interface_a.a, interface_b.a)
         self.assertEqual(interface_a.b, interface_b.b)
 
-        self.assertEqual(interface_a.a.min, interface_b.a.min)        
+        self.assertEqual(interface_a.a.min, interface_b.a.min)
         self.assertEqual(interface_a.b.min, interface_b.b.min)
 
         self.assertEqual(interface_a.a.max, interface_b.a.max)
@@ -88,7 +90,7 @@ class TestSignalCopy(TestCase):
 
         self.assertIsNot(interface_a.a, interface_b.a)
         self.assertIsNot(interface_a.b, interface_b.b)
-        
+
         self.assertIsNot(interface_a.a.val, interface_b.a.val)
         self.assertIsNot(interface_a.b.val, interface_b.b.val)
 
@@ -119,11 +121,11 @@ class TestSignalCopy(TestCase):
 class TestClockSource(TestCase):
     '''There should be a clock source that takes a boolean signal and a
     period and returns a clock signal.
-    
-    If the period is even, then even states of the clock should be the same 
-    length as odd states of the clock. 
-    
-    If the period is odd, then the even states of the clock should be one time 
+
+    If the period is even, then even states of the clock should be the same
+    length as odd states of the clock.
+
+    If the period is odd, then the even states of the clock should be one time
     interval shorter than the even states.
 
     The following example is a starting value of high, corresponding to even
@@ -151,14 +153,14 @@ class TestClockSource(TestCase):
                     self.assertEqual(clock.val, start_val)
                 else:
                     self.assertEqual(clock.val, not(start_val))
-                    
+
                 time[0] += 1
 
             return dut, check_every_interval
 
         top_level_block = top()
         top_level_block.run_sim(duration=10*period, quiet=1)
-        top_level_block.quit_sim()        
+        top_level_block.quit_sim()
 
     def test_not_signal(self):
         '''Passing something that is not a signal should raise a ValueError
@@ -195,7 +197,7 @@ class TestClockSource(TestCase):
         '''The even period clock should convert without error to VHDL
         '''
         clock = Signal(bool(0))
-        
+
         period = 10
         test_block = clock_source(clock, period)
         tmp_dir = tempfile.mkdtemp()
@@ -210,7 +212,7 @@ class TestClockSource(TestCase):
         '''The odd period clock should convert without error to VHDL
         '''
         clock = Signal(bool(0))
-        
+
         period = 9
         test_block = clock_source(clock, period)
         tmp_dir = tempfile.mkdtemp()
@@ -225,7 +227,7 @@ class TestClockSource(TestCase):
         '''The even period clock should convert without error to Verilog
         '''
         clock = Signal(bool(0))
-        
+
         period = 10
         test_block = clock_source(clock, period)
         tmp_dir = tempfile.mkdtemp()
@@ -240,7 +242,7 @@ class TestClockSource(TestCase):
         '''The odd period clock should convert without error to Verilog
         '''
         clock = Signal(bool(0))
-        
+
         period = 9
         test_block = clock_source(clock, period)
         tmp_dir = tempfile.mkdtemp()
@@ -253,7 +255,7 @@ class TestClockSource(TestCase):
             shutil.rmtree(tmp_dir)
 
 class TestInitResetSource(HDLTestCase):
-    '''There should be a initialisation reset source factory for generating 
+    '''There should be a initialisation reset source factory for generating
     instances that output high for the first three periods in order to reset
     everything, and then goes permanently low.
     '''
@@ -261,7 +263,7 @@ class TestInitResetSource(HDLTestCase):
     def setUp(self):
         self.clock = Signal(bool(1))
 
-        # Keep things simple (for the edge sensitivity test) and enforce an 
+        # Keep things simple (for the edge sensitivity test) and enforce an
         # even clock period
         self.clock_period = 10
 
@@ -274,18 +276,18 @@ class TestInitResetSource(HDLTestCase):
     def test_reset_signal_checked(self):
         '''The init_reset_source should only allow a ResetSignal.
         '''
-        self.do_port_check_reset_test(init_reset_source, 'reset', 
-                                      self.reset_signal.active, 
+        self.do_port_check_reset_test(init_reset_source, 'reset',
+                                      self.reset_signal.active,
                                       self.reset_signal.async)
 
     def test_posedge_reset_sequence(self):
         '''The reset sequence should be three active cycles, then inactive.
 
-        The idea is to allow the DUT etc to be reset to a known state prior 
+        The idea is to allow the DUT etc to be reset to a known state prior
         to running the simulation.
 
-        The three active cycles should include the starting condition, so 
-        from the perspective of the reset source, the output should be 
+        The three active cycles should include the starting condition, so
+        from the perspective of the reset source, the output should be
         set active on the first two clock transitions.
 
         The default is to use a positive edge sensitivity.
@@ -313,7 +315,7 @@ class TestInitResetSource(HDLTestCase):
                             self.assertEqual(self.reset_signal.active,
                                              self.reset_signal)
                         else:
-                            self.assertEqual(not self.reset_signal.active, 
+                            self.assertEqual(not self.reset_signal.active,
                                              self.reset_signal)
 
                         if clock_idx[0] >= n_runs:
@@ -324,13 +326,13 @@ class TestInitResetSource(HDLTestCase):
                         # negative edge
                         # Nothing changes
                         if clock_idx[0] < 3 + clock_start:
-                            self.assertEqual(self.reset_signal.active, 
+                            self.assertEqual(self.reset_signal.active,
                                              self.reset_signal)
 
                         else:
-                            self.assertEqual(not self.reset_signal.active, 
+                            self.assertEqual(not self.reset_signal.active,
                                              self.reset_signal)
-                
+
                 clockgen = clock_source(clock, self.clock_period)
                 dut = init_reset_source(self.reset_signal, clock)
 
@@ -367,8 +369,8 @@ class TestInitResetSource(HDLTestCase):
                             self.assertEqual(self.reset_signal.active,
                                              self.reset_signal)
                         else:
-                            self.assertEqual(not self.reset_signal.active, 
-                                             self.reset_signal)  
+                            self.assertEqual(not self.reset_signal.active,
+                                             self.reset_signal)
 
                         if clock_idx[0] >= n_runs:
                             raise StopSimulation
@@ -378,14 +380,14 @@ class TestInitResetSource(HDLTestCase):
                         # positive edge
                         # Nothing changes
                         if clock_idx[0] < 3 + 1 - clock_start:
-                            self.assertEqual(self.reset_signal.active, 
+                            self.assertEqual(self.reset_signal.active,
                                              self.reset_signal)
 
                         else:
-                            self.assertEqual(not self.reset_signal.active, 
+                            self.assertEqual(not self.reset_signal.active,
                                              self.reset_signal)
 
-                dut = init_reset_source(self.reset_signal, clock, 
+                dut = init_reset_source(self.reset_signal, clock,
                                         edge_sensitivity='negedge')
                 clockgen = clock_source(clock, self.clock_period)
 
@@ -400,18 +402,18 @@ class TestInitResetSource(HDLTestCase):
         '''An invalid sensitivity should raise a ValueError
         '''
         edge_sensitivity = 'foobar'
-        test_signal = self.reset_signal       
+        test_signal = self.reset_signal
         self.assertRaisesRegex(ValueError, 'Invalid edge sensitivity',
-                               init_reset_source, test_signal, self.clock, 
+                               init_reset_source, test_signal, self.clock,
                                edge_sensitivity=edge_sensitivity)
 
     def test_init_reset_source_convertible_to_VHDL(self):
         '''The init reset source should be convertible to VHDL
         '''
-        
+
         clock = Signal(bool(0))
         test_signal = Signal(intbv(0, min=-1000, max=1024))
-        
+
         test_block = init_reset_source(self.reset_signal, clock)
         tmp_dir = tempfile.mkdtemp()
 
@@ -424,10 +426,10 @@ class TestInitResetSource(HDLTestCase):
     def test_init_reset_source_convertible_to_Verilog(self):
         '''The init reset source should be convertible to Verilog
         '''
-        
+
         clock = Signal(bool(0))
         test_signal = Signal(intbv(0, min=-1000, max=1024))
-        
+
         test_block = init_reset_source(self.reset_signal, clock)
         tmp_dir = tempfile.mkdtemp()
 
@@ -440,7 +442,7 @@ class TestInitResetSource(HDLTestCase):
 
 
 class TestRandomSource(TestCase):
-    '''There should be a random source factory for generating instances that 
+    '''There should be a random source factory for generating instances that
     write random data to a Signal.
 
     It should take an optional seed argument.
@@ -448,10 +450,10 @@ class TestRandomSource(TestCase):
     def setUp(self):
         self.clock = Signal(bool(1))
 
-        # Keep things simple (for the edge sensitivity test) and enforce an 
+        # Keep things simple (for the edge sensitivity test) and enforce an
         # even clock period
         self.clock_period = 10
-        
+
     def tearDown(self):
         random.seed(None)
 
@@ -466,28 +468,28 @@ class TestRandomSource(TestCase):
         reset_signal = ResetSignal(intbv(0), active=1, async=False)
         min_val = -1000
         max_val = 1024
-        
+
         seed = randrange(0, 0x5EEDF00D)
-        
+
         random.seed(seed)
 
         test_output = [randrange(min_val, max_val) for each in range(100)]
         test_output.reverse()
         test_output.append(0)
-        
+
         @instance
         def output_check():
 
             current_output = 0
             # Nothing has happened yet...
             yield(delay(self.clock_period//2))
-            
+
             while True:
                 try:
                     if self.clock.val:
-                        # The value should have changed                                
+                        # The value should have changed
                         current_output = test_output.pop()
-                        self.assertEqual(current_output, 
+                        self.assertEqual(current_output,
                                          int(test_signal))
                     else:
                         # No change
@@ -496,16 +498,16 @@ class TestRandomSource(TestCase):
 
                 except IndexError:
                     raise StopSimulation
-                
+
                 # We assume an even clock period
                 yield delay(self.clock_period//2)
 
         edge_sensitivity = 'posedge'
-        test_signal = Signal(intbv(0, min=min_val, max=max_val))        
+        test_signal = Signal(intbv(0, min=min_val, max=max_val))
         # Careful! We need to create and use the random_source without doing
         # any other random number generation. It should therefore be the last
         # thing created before use.
-        dut = random_source(test_signal, self.clock, reset_signal, seed, 
+        dut = random_source(test_signal, self.clock, reset_signal, seed,
                             edge_sensitivity)
         clockgen = clock_source(self.clock, self.clock_period)
 
@@ -523,9 +525,9 @@ class TestRandomSource(TestCase):
         reset_signal = ResetSignal(intbv(0), active=1, async=False)
         min_val = -1000
         max_val = 1024
-        
+
         seed = randrange(0, 0x5EEDF00D)
-        
+
         random.seed(seed)
 
         test_output = [randrange(min_val, max_val) for each in range(100)]
@@ -537,12 +539,12 @@ class TestRandomSource(TestCase):
             current_output = 0
             # Nothing has happened yet...
             yield(delay(self.clock_period//2))
-            
+
             while True:
                 try:
                     if self.clock.val:
                         # No change
-                        self.assertEqual(current_output, 
+                        self.assertEqual(current_output,
                                          int(test_signal))
                     else:
                         # Value changed
@@ -552,17 +554,17 @@ class TestRandomSource(TestCase):
 
                 except IndexError:
                     raise StopSimulation
-                
+
                 # We assume an even clock period
                 yield delay(self.clock_period//2)
 
 
         edge_sensitivity = 'negedge'
-        test_signal = Signal(intbv(0, min=min_val, max=max_val))        
+        test_signal = Signal(intbv(0, min=min_val, max=max_val))
         # Careful! We need to create and use the random_source without doing
         # any other random number generation. It should therefore be the last
         # thing created before use.
-        dut = random_source(test_signal, self.clock, reset_signal, 
+        dut = random_source(test_signal, self.clock, reset_signal,
                             seed, edge_sensitivity)
 
         clockgen = clock_source(self.clock, self.clock_period)
@@ -577,7 +579,7 @@ class TestRandomSource(TestCase):
         reset_signal = ResetSignal(intbv(0), active=1, async=False)
         min_val = test_signal.val.min
         max_val = test_signal.val.max
-        
+
         seed = randrange(0, 0x5EEDF00D)
 
         random.seed(seed)
@@ -610,17 +612,17 @@ class TestRandomSource(TestCase):
         '''An invalid sensitivity should raise a ValueError.
         '''
         edge_sensitivity = 'foobar'
-        reset_signal = ResetSignal(intbv(0), active=1, async=False)        
-        test_signal = Signal(intbv(0, min=-100, max=100))        
+        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        test_signal = Signal(intbv(0, min=-100, max=100))
         self.assertRaisesRegex(ValueError, 'Invalid edge sensitivity',
-                               random_source, test_signal, self.clock, 
-                               reset_signal, 
+                               random_source, test_signal, self.clock,
+                               reset_signal,
                                edge_sensitivity=edge_sensitivity)
 
     def test_output_reset_whilst_reset_active(self):
         '''The random source outputs are reset synchronously on active reset.
 
-        That is, the clock cycle _after_ the reset is made active, the 
+        That is, the clock cycle _after_ the reset is made active, the
         output values of the Signals should be set to their defaults.
         '''
         enum_names = ('a', 'b', 'c', 'd', 'e')
@@ -656,7 +658,7 @@ class TestRandomSource(TestCase):
 
                     else:
                         pass
-                    
+
                     last_reset[0] = copy.copy(reset_signal.val)
 
             else:
@@ -670,7 +672,7 @@ class TestRandomSource(TestCase):
 
                     else:
                         pass
-                    
+
                     last_reset[0] = copy.copy(reset_signal.val)
 
 
@@ -679,10 +681,10 @@ class TestRandomSource(TestCase):
                 intbv(0), active=1, async=False)
 
             reset_signal = ResetSignal(intbv(0), active=1, async=False)
-            
+
             last_reset = [copy.copy(reset_signal.val)]
 
-            random_reset = random_source(reset_signal, clock, 
+            random_reset = random_source(reset_signal, clock,
                                          dummy_reset_signal)
             clockgen = clock_source(clock, self.clock_period)
 
@@ -692,7 +694,7 @@ class TestRandomSource(TestCase):
 
         for each_test_signal, each_test_signal_type in test_signals:
 
-            clock = Signal(bool(0))        
+            clock = Signal(bool(0))
 
             top_level_block = top(each_test_signal, each_test_signal_type)
             top_level_block.run_sim(
@@ -710,7 +712,7 @@ class TestRandomSource(TestCase):
         max_val = test_signal.val.max
 
         test_output = [1] * 10
-        
+
         @always_seq(self.clock.posedge, reset_signal)
         def output_check():
             try:
@@ -736,7 +738,7 @@ class TestRandomSource(TestCase):
         reset_signal = ResetSignal(intbv(0), active=1, async=False)
         min_val = test_signal.val.min
         max_val = test_signal.val.max
-        
+
         seed = randrange(0, 0x5EEDF00D)
 
         random.seed(seed)
@@ -791,7 +793,7 @@ class TestRandomSource(TestCase):
         '''It should be possible to have a bool signal with a long value.
 
         When a bool signal is update, it is valid to do so with 0 or 1 as well
-        as True and False. Signals updated like this should be handled 
+        as True and False. Signals updated like this should be handled
         properly.
         '''
         test_signal = Signal(bool(0))
@@ -829,7 +831,7 @@ class TestRandomSource(TestCase):
         '''
         enum_names = ('a', 'b', 'c', 'd', 'e')
         enum_vals = enum(*enum_names)
-        
+
         test_signal = Signal(enum_vals.a)
         reset_signal = ResetSignal(intbv(0), active=1, async=False)
 
@@ -874,7 +876,7 @@ class TestRandomSource(TestCase):
         # Set the initial seed
         seed = randrange(0, 0x5EEDF00D)
         random.seed(seed)
-        
+
         # Replicate the expected random state logic
         random.seed(randrange(0, 0x5EEDF00D))
         random_state = random.getstate()
@@ -889,7 +891,7 @@ class TestRandomSource(TestCase):
             stripped_test_list.append(each_signal)
 
             each_signal_output = [
-                randrange(each_signal.min, each_signal.max) for 
+                randrange(each_signal.min, each_signal.max) for
                 each in range(100)]
 
             each_signal_output.reverse()
@@ -898,14 +900,14 @@ class TestRandomSource(TestCase):
             outputs.append(each_signal_output)
 
             # seed a new value
-            random.setstate(random_state)            
+            random.setstate(random_state)
             random.seed(randrange(0, 0x5EEDF00D))
             random_state = random.getstate()
-        
+
         # None of the data vectors should be the same as any other
         data_hashes = [hash(tuple(each)) for each in outputs]
         # asserts all the hashes are unique
-        assert len(set(data_hashes)) == len(outputs) 
+        assert len(set(data_hashes)) == len(outputs)
 
         @always_seq(self.clock.posedge, reset_signal)
         def output_check():
@@ -926,7 +928,7 @@ class TestRandomSource(TestCase):
     def test_interface_signal(self):
         '''It should be possible to generate random interface signals.
         '''
-        
+
         enum_names = ('a', 'b', 'c', 'd', 'e')
         enum_vals = enum(*enum_names)
 
@@ -952,7 +954,7 @@ class TestRandomSource(TestCase):
         # Set the initial seed
         seed = randrange(0, 0x5EEDF00D)
         random.seed(seed)
-        
+
         # Replicate the expected random state logic
         random.seed(randrange(0, 0x5EEDF00D))
         random_state = random.getstate()
@@ -963,7 +965,7 @@ class TestRandomSource(TestCase):
         intbv1_output += [0] # The first value is not defined yet.
 
         random.setstate(random_state)
-        
+
         random.seed(randrange(0, 0x5EEDF00D))
 
         random_state = random.getstate()
@@ -1021,15 +1023,15 @@ class TestRandomSource(TestCase):
         test_signal = Signal('a string')
         reset_signal = ResetSignal(intbv(0), active=1, async=False)
         seed = randrange(0, 0x5EEDF00D)
-        
-        self.assertRaisesRegex(ValueError, 'Invalid signal type', 
-                               random_source, test_signal, self.clock, 
+
+        self.assertRaisesRegex(ValueError, 'Invalid signal type',
+                               random_source, test_signal, self.clock,
                                reset_signal, seed)
 
 
 class TestRecorderSink(TestCase):
-    '''There should be a block that records a signal. It should be 
-    constructed with a signal and a clock, and it should record every value 
+    '''There should be a block that records a signal. It should be
+    constructed with a signal and a clock, and it should record every value
     on every sensitive clock edge, plus the start value.
     '''
     def setUp(self):
@@ -1039,7 +1041,7 @@ class TestRecorderSink(TestCase):
 
     def tearDown(self):
         random.seed(None)
-        
+
     def test_correct_intbv_recording(self):
         '''It should record intbv Signals as a list of intbv values.
         '''
@@ -1123,7 +1125,7 @@ class TestRecorderSink(TestCase):
             Signal(intbv(0, min=-2**n, max=2**n-1)) for n in range(1, N+1)]
 
         test_signal_list[5] = 'not a signal'
-        valid_signals = [each for each in test_signal_list if 
+        valid_signals = [each for each in test_signal_list if
                          isinstance(each, myhdl._Signal._Signal)]
 
         test_output = []
@@ -1138,7 +1140,7 @@ class TestRecorderSink(TestCase):
 
                 for n in range(len(valid_signals)):
                     each_output[n] = copy.copy(valid_signals[n].val)
-                
+
                 test_output.append(each_output)
 
             source = random_source(test_signal_list, self.clock, self.reset)
@@ -1187,7 +1189,7 @@ class TestRecorderSink(TestCase):
         '''
         enum_names = ('a', 'b', 'c', 'd', 'e')
         enum_vals = enum(*enum_names)
-        
+
         test_signal = Signal(enum_vals.a)
         test_output = []
         recorded_output = []
@@ -1224,7 +1226,7 @@ class TestRecorderSink(TestCase):
         test_signal = Signal(intbv(0, min=min_val, max=max_val))
         neg_edge_output = []
         pos_edge_output = []
-        
+
         @block
         def top():
             # We require a negative edge source
@@ -1232,13 +1234,13 @@ class TestRecorderSink(TestCase):
                                    edge_sensitivity='negedge')
 
             neg_edge_sink = recorder_sink(
-                test_signal, self.clock, neg_edge_output, 
+                test_signal, self.clock, neg_edge_output,
                 edge_sensitivity='negedge')
             pos_edge_sink = recorder_sink(
-                test_signal, self.clock, pos_edge_output, 
+                test_signal, self.clock, pos_edge_output,
                 edge_sensitivity='posedge')
             clockgen = clock_source(self.clock, self.clock_period)
-            
+
             return clockgen, source, pos_edge_sink, neg_edge_sink
 
         top_level_block = top()
@@ -1270,27 +1272,27 @@ class TestLutSignalDriver(TestCase):
     of the convertible device under test, there should be a block that
     reads from a lookup table and writes the result to the passed in signal.
     '''
-    
+
     def setUp(self):
         self.clock = Signal(bool(1))
 
-        # Keep things simple (for the edge sensitivity test) and enforce an 
+        # Keep things simple (for the edge sensitivity test) and enforce an
         # even clock period
         self.clock_period = 10
 
     def test_basic_signal_driver(self):
         '''It should be possible to drive a signal from a simple list.
         '''
-        
+
         test_signal = Signal(intbv(0, min=-1000, max=1024))
         min_val = test_signal.val.min
         max_val = test_signal.val.max
-        
+
         test_output = [randrange(min_val, max_val) for each in range(100)]
         lut = copy.copy(test_output)
 
-        # ignore last couple of values to make sure there are few enough 
-        # values to work (otherwise, the lut overflows before StopSimulation 
+        # ignore last couple of values to make sure there are few enough
+        # values to work (otherwise, the lut overflows before StopSimulation
         # is raised)
         test_output = test_output[:-2]
         test_output.reverse()
@@ -1314,7 +1316,7 @@ class TestLutSignalDriver(TestCase):
         test_signal = Signal(intbv(0, min=-1000, max=1024))
         min_val = test_signal.val.min
         max_val = test_signal.val.max
-        
+
         test_output = [randrange(min_val, max_val) for each in range(100)]
         lut = copy.copy(test_output)
         test_output.reverse()
@@ -1341,7 +1343,7 @@ class TestLutSignalDriver(TestCase):
         should be raised if it is not.
         '''
         test_signal = Signal(intbv(0, min=-1000, max=1024))
-        
+
         lut = ()
         self.assertRaisesRegex(
             ValueError, 'Invalid zero length lut',
@@ -1361,7 +1363,7 @@ class TestLutSignalDriver(TestCase):
         source = lut_signal_driver(test_signal, lut, self.clock)
 
         self.assertRaisesRegex(ValueError, 'Invalid edge sensitivity',
-                               lut_signal_driver, test_signal, lut, 
+                               lut_signal_driver, test_signal, lut,
                                self.clock, edge_sensitivity='INVALID')
 
     def test_lut_iterable(self):
@@ -1376,7 +1378,7 @@ class TestLutSignalDriver(TestCase):
         test_signal = Signal(intbv(0, min=min_val, max=max_val))
 
         self.assertRaisesRegex(TypeError, 'object is not iterable',
-                               lut_signal_driver, test_signal, invalid_lut, 
+                               lut_signal_driver, test_signal, invalid_lut,
                                self.clock)
 
     def test_posedge_sensitivity(self):
@@ -1394,8 +1396,8 @@ class TestLutSignalDriver(TestCase):
         test_output = [randrange(min_val, max_val) for each in range(100)]
         lut = copy.copy(test_output)
 
-        # ignore last couple of values to make sure there are few enough 
-        # values to work (otherwise, the lut overflows before StopSimulation 
+        # ignore last couple of values to make sure there are few enough
+        # values to work (otherwise, the lut overflows before StopSimulation
         # is raised)
         test_output = test_output[:-2]
         test_output.reverse()
@@ -1409,31 +1411,31 @@ class TestLutSignalDriver(TestCase):
 
             # Then wait for the next clock edge
             yield(delay(self.clock_period//2))
-            
+
             while True:
                 try:
                     if next_transition: # a positive edge
-                        self.assertEqual(current_output, 
+                        self.assertEqual(current_output,
                                          int(test_signal))
 
                         # The value should now change for the next cycle
                         current_output = test_output.pop()
-                        
+
                     else: # A negative edge
                         self.assertEqual(current_output,
                                          int(test_signal))
-                        # No change                        
+                        # No change
 
                 except IndexError:
                     raise StopSimulation
-                
+
                 next_transition[:] = not next_transition
-                
+
                 # We assume an even clock period
                 yield delay(self.clock_period//2)
 
         edge_sensitivity = 'posedge'
-        test_signal = Signal(intbv(0, min=min_val, max=max_val))    
+        test_signal = Signal(intbv(0, min=min_val, max=max_val))
 
         dut = lut_signal_driver(test_signal, lut, self.clock)
         clockgen = clock_source(self.clock, self.clock_period)
@@ -1455,8 +1457,8 @@ class TestLutSignalDriver(TestCase):
         test_output = [randrange(min_val, max_val) for each in range(100)]
         lut = copy.copy(test_output)
 
-        # ignore last couple of values to make sure there are few enough 
-        # values to work (otherwise, the lut overflows before StopSimulation 
+        # ignore last couple of values to make sure there are few enough
+        # values to work (otherwise, the lut overflows before StopSimulation
         # is raised)
         test_output = test_output[:-2]
         test_output.reverse()
@@ -1470,32 +1472,32 @@ class TestLutSignalDriver(TestCase):
 
             # Then wait for the next clock edge
             yield(delay(self.clock_period//2))
-            
+
             while True:
                 try:
                     if next_transition: # a positive edge
-                        self.assertEqual(current_output, 
+                        self.assertEqual(current_output,
                                          int(test_signal))
                         # No change
                     else: # A negative edge
                         self.assertEqual(current_output,
                                          int(test_signal))
-                        
+
                         # The value should now change for the next cycle
                         current_output = test_output.pop()
 
                 except IndexError:
                     raise StopSimulation
-                
+
                 next_transition[:] = not next_transition
-                
+
                 # We assume an even clock period
                 yield delay(self.clock_period//2)
 
         edge_sensitivity = 'negedge'
-        test_signal = Signal(intbv(0, min=min_val, max=max_val))    
+        test_signal = Signal(intbv(0, min=min_val, max=max_val))
 
-        dut = lut_signal_driver(test_signal, lut, self.clock, 
+        dut = lut_signal_driver(test_signal, lut, self.clock,
                                 edge_sensitivity=edge_sensitivity)
         clockgen = clock_source(self.clock, self.clock_period)
 
@@ -1513,9 +1515,9 @@ class TestLutSignalDriver(TestCase):
             min_val = test_signal.val.min
             max_val = test_signal.val.max
             clock = self.clock
-                
+
             lut = [randrange(min_val, max_val) for each in range(100)]
-                
+
             # Make sure our lut length is not a power of 2
             assert (log(len(lut), 2) % 2 != 0)
 
@@ -1536,9 +1538,9 @@ class TestLutSignalDriver(TestCase):
             min_val = test_signal.val.min
             max_val = test_signal.val.max
             clock = self.clock
-                
+
             lut = [randrange(min_val, max_val) for each in range(100)]
-                
+
             # Make sure our lut length is not a power of 2
             assert (log(len(lut), 2) % 2 != 0)
 
@@ -1547,3 +1549,75 @@ class TestLutSignalDriver(TestCase):
 
         finally:
             shutil.rmtree(tmp_dir)
+
+    def test_lut_signal_driver_VHDL_with_name_annotation(self):
+        '''If signal_name is a string, then output VHDL should contain an
+        annotation comment that looks like:
+            ``-- <name_annotation> internal_converted_name signal_name``
+        in which ``internal_converted_name`` is whatever name MyHDL assigns
+        the signal in the converted file and ``signal_name`` is whatever is
+        passed to this function.
+        '''
+        tmp_dir = tempfile.mkdtemp()
+
+        try:
+            test_signal = Signal(intbv(0, min=-1000, max=1024))
+
+            min_val = test_signal.val.min
+            max_val = test_signal.val.max
+            clock = self.clock
+
+            lut = [randrange(min_val, max_val) for each in range(100)]
+
+            # Make sure our lut length is not a power of 2
+            assert (log(len(lut), 2) % 2 != 0)
+
+            test_block = lut_signal_driver(
+                test_signal, lut, clock, signal_name='my_signal_name')
+            test_block.convert(hdl='VHDL', path=tmp_dir)
+
+            with open(os.path.join(tmp_dir, 'lut_signal_driver.vhd')) as f:
+                vhdl_code = f.read()
+
+            self.assertTrue(
+                '\n-- <name_annotation> signal my_signal_name\n' in vhdl_code)
+
+        finally:
+            shutil.rmtree(tmp_dir)
+
+    def test_lut_signal_driver_verilog_with_name_annotation(self):
+        '''If signal_name is a string, then output verilog should contain an
+        annotation comment that looks like:
+            ``// <name_annotation> internal_converted_name signal_name``
+        in which ``internal_converted_name`` is whatever name MyHDL assigns
+        the signal in the converted file and ``signal_name`` is whatever is
+        passed to this function.
+        '''
+        tmp_dir = tempfile.mkdtemp()
+
+        try:
+            test_signal = Signal(intbv(0, min=-1000, max=1024))
+
+            min_val = test_signal.val.min
+            max_val = test_signal.val.max
+            clock = self.clock
+
+            lut = [randrange(min_val, max_val) for each in range(100)]
+
+            # Make sure our lut length is not a power of 2
+            assert (log(len(lut), 2) % 2 != 0)
+
+            test_block = lut_signal_driver(
+                test_signal, lut, clock, signal_name='my_signal_name')
+            test_block.convert(hdl='Verilog', path=tmp_dir)
+
+            with open(os.path.join(tmp_dir, 'lut_signal_driver.v')) as f:
+                verilog_code = f.read()
+
+            self.assertTrue(
+                '\n// <name_annotation> signal my_signal_name\n' in
+                verilog_code)
+
+        finally:
+            shutil.rmtree(tmp_dir)
+

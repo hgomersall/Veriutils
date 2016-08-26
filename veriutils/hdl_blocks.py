@@ -309,9 +309,22 @@ def recorder_sink(signal, clock, recorded_output_list,
 
     return recorder
 
+@block
+def _signal_driver_name_annotation(signal, name):
+
+    @always_comb
+    def non_block():
+        signal
+
+    annotation = '<name_annotation> $signal %s' % name
+    _signal_driver_name_annotation.vhdl_code = '-- %s' % annotation
+    _signal_driver_name_annotation.verilog_code = '// %s' % annotation
+
+    return non_block
 
 @block
-def lut_signal_driver(signal, drive_lut, clock, edge_sensitivity='posedge'):
+def lut_signal_driver(signal, drive_lut, clock, edge_sensitivity='posedge',
+                     signal_name=None):
     '''Drive the output from a look-up table. The lookup table is defined by
     `lut` which should be an iterable object.
 
@@ -322,6 +335,15 @@ def lut_signal_driver(signal, drive_lut, clock, edge_sensitivity='posedge'):
 
     The clock edge sensitivity is set by the ``edge_sensitivity`` argument and
     can be either `posedge` for positive edge or `negedge` for negative edge.
+
+    If ``signal_name`` is a string, then an annotation is made to the
+    output of the conversion. This is a comment containing:
+        ``<name_annotation> internal_converted_name signal_name``
+
+    ``internal_converted_name`` is whatever name MyHDL assigns the signal
+    in the converted file and ``signal_name`` is whatever is passed to this
+    function. This is a bit of a hack on MyHDL to allow calling code to
+    explicitly denote what the signal lookup should be.
     '''
 
     if edge_sensitivity not in ('posedge', 'negedge'):
@@ -359,5 +381,8 @@ def lut_signal_driver(signal, drive_lut, clock, edge_sensitivity='posedge'):
                 else:
                     lut_idx[:] = lut_idx + 1
 
+    if signal_name is not None:
+        return _signal_driver_name_annotation(signal, signal_name), lut_driver
+    else:
+        return lut_driver
 
-    return lut_driver
