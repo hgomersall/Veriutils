@@ -48,6 +48,9 @@ def file_writer(filename, signal_list, clock, signal_names=None):
     verilog_signal_str_write_list = []
     verilog_name_str_write_list = []
 
+    vhdl_annotations = ''
+    verilog_annotations = ''
+
     for n, each_signal in enumerate(signal_list):
         locals()['signal_' + str(n)] = each_signal
         locals()['signal_' + str(n)].read = True
@@ -64,6 +67,10 @@ def file_writer(filename, signal_list, clock, signal_names=None):
             verilog_name_str_write_list.append(
                 '$$fwrite(output_file, \"%s\");' % signal_names[n])
 
+            port_name = signal_names[n].split()[-1]
+            annotation = '<name_annotation> $signal_%d %s' % (n, port_name)
+            vhdl_annotations += '-- %s\n' % annotation
+            verilog_annotations += '// %s\n' % annotation
 
         if isinstance(each_signal._val, bool):
             vhdl_signal_str_write_list.append(
@@ -100,6 +107,7 @@ def file_writer(filename, signal_list, clock, signal_names=None):
         .join(verilog_signal_str_write_list))
 
     file_writer.verilog_code = '''
+%s
 initial begin: write_to_file
     integer output_file;
 
@@ -117,9 +125,11 @@ initial begin: write_to_file
         end
     end
 end
-    ''' % (filename, verilog_name_str_write, verilog_signal_str_write,)
+    ''' % (verilog_annotations, filename, verilog_name_str_write,
+           verilog_signal_str_write,)
 
     file_writer.vhdl_code = '''
+%s
 write_to_file: process ($clock) is
 
     file output_file : TEXT open WRITE_MODE is "%s";
@@ -136,7 +146,8 @@ begin
         writeline(output_file, output_line);
     end if;
 end process write_to_file;
-    ''' % (filename, vhdl_name_str_write, vhdl_signal_str_write,)
+    ''' % (vhdl_annotations, filename, vhdl_name_str_write,
+           vhdl_signal_str_write,)
 
     @always(clock.posedge)
     def _dummy_file_writer():
