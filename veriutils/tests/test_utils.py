@@ -3,7 +3,8 @@ from base_hdl_test import TestCase
 from myhdl import Signal, ResetSignal, intbv, enum, bin
 from veriutils import (
     check_intbv_signal, check_bool_signal, check_reset_signal,
-    signed_intbv_list_to_unsigned, unsigned_intbv_list_to_signed)
+    signed_intbv_list_to_unsigned, unsigned_intbv_list_to_signed,
+    signed_int_list_to_unsigned, unsigned_int_list_to_signed)
 
 import random
 
@@ -489,3 +490,51 @@ class TestUnsignedIntbvListToSigned(TestCase):
         self.assertEqual(test_output, signed_list)
         self.assertEqual([len(val) for val in test_output], sizes)
 
+class TestSignedIntListToUnsigned(TestCase):
+
+    def test_list_of_ints(self):
+        '''A list of signed int values should be converted to a list of
+        unsigned int values with the equivalent bit values, when provided
+        with a suitable bit length.
+        '''
+        size = random.randrange(4, 20)
+
+        signed_list = [intbv(random.randrange(-2**(size-1), 2**(size-1)),
+                            -2**(size-1), 2**(size-1)) for n in range(1000)]
+
+
+        unsigned_list = [
+            int(bin(~(-val) + 1, len(val)), 2) if val < 0 else int(val) for
+            val in signed_list]
+
+        int_signed_list = [int(each) for each in signed_list]
+        int_unsigned_list = [int(each) for each in unsigned_list]
+
+        test_output = signed_int_list_to_unsigned(signed_list, size)
+
+        assert(all([val >= 0 for val in unsigned_list]))
+
+        self.assertEqual(test_output, int_unsigned_list)
+
+class TestUnsignedIntListToSigned(TestCase):
+
+    def test_list_of_ints(self):
+        '''A list of unsigned int values should be converted to a list of
+        signed int values with the equivalent bit values, when provided
+        with a suitable bit length.
+        '''
+        size = random.randrange(4, 20)
+
+        unsigned_list = [
+            intbv(random.randrange(0, 2**(size)))[size:] for n in range(1000)]
+
+        signed_list = [
+            int(val) - 2**len(val) if val >= 2**(len(val) - 1) else int(val)
+            for val in unsigned_list]
+
+        int_signed_list = [int(each) for each in signed_list]
+        int_unsigned_list = [int(each) for each in unsigned_list]
+
+        test_output = unsigned_int_list_to_signed(unsigned_list, size)
+
+        self.assertEqual(test_output, int_signed_list)

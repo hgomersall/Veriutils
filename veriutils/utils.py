@@ -4,7 +4,8 @@ import myhdl
 from math import log, floor
 
 __all__ = ['check_intbv_signal', 'check_bool_signal', 'check_reset_signal',
-           'signed_intbv_list_to_unsigned', 'unsigned_intbv_list_to_signed']
+           'signed_intbv_list_to_unsigned', 'unsigned_intbv_list_to_signed',
+           'signed_int_list_to_unsigned', 'unsigned_int_list_to_signed']
 
 def check_intbv_signal(test_signal, name, correct_width=None, signed=None,
                        val_range=None, range_test='inside'):
@@ -143,3 +144,25 @@ def unsigned_intbv_list_to_signed(unsigned_list):
     signed_list = [val.signed() for val in unsigned_list]
 
     return signed_list
+
+def signed_int_list_to_unsigned(signed_list, bit_length):
+
+    signed_intbv_list= [
+        intbv(val, min=-2**(bit_length-1), max=2**(bit_length-1))
+        for val in signed_list]
+
+    unsigned_intbv_list = (
+        signed_intbv_list_to_unsigned(signed_intbv_list))
+
+    return [int(each) for each in unsigned_intbv_list]
+
+def unsigned_int_list_to_signed(unsigned_list, bit_length):
+
+    unsigned_intbv_list = [
+        intbv(val)[bit_length:] for val in unsigned_list]
+
+    signed_intbv_list = (
+        unsigned_intbv_list_to_signed(unsigned_intbv_list))
+
+    return [int(each) for each in signed_intbv_list]
+
