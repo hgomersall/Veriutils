@@ -1,6 +1,5 @@
 from .hdl_blocks import *
 from .axi import AxiStreamSlaveBFM, axi_stream_buffer, axi_master_playback
-from . import VIVADO_EXECUTABLE
 
 from myhdl import *
 
