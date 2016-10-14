@@ -486,9 +486,13 @@ def axi_master_playback(
     packets list will not trigger the ``TLAST`` to be asserted. This means
     data streams for which ``TLAST`` is not meaningful can be modelled.
     '''
+    if sum(len(each) for each in packets) == 0:
+        # We need a non-zero packet length to work around a myhdl conversion
+        # bug with empty lists. The following satisfies everything.
+        packets = [[None]]
+
     # From the packets, we preload all the values that should be output.
     # This is TDATA, TVALID and TLAST
-
     TDATAs = tuple(val if val is not None else 0 for packet in packets
                    for val in packet)
 

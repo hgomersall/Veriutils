@@ -2168,9 +2168,12 @@ class TestAxiStreamBuffer(TestCase):
         self.assertEqual(self.test_sink.completed_packets, [])
         self.assertEqual(trimmed_data_list, self.test_sink.current_packet)
 
-class TestAxiMasterPlaybackBlock(TestCase):
+class TestAxiMasterPlaybackBlockMinimal(TestCase):
     '''There should be a convertible AXI master block that simply plays back
     the packets it is passed.
+
+    This minimal specification should be testable under VHDL/Verilog
+    simulation.
     '''
 
     def setUp(self):
@@ -2242,11 +2245,64 @@ class TestAxiMasterPlaybackBlock(TestCase):
             (exit_checker, (self.clock,), {}),
             (self.axi_slave.model, (self.clock, self.axi_interface, 0.5), {})]
 
-        self.sim_wrapper(
+        dut_results, ref_results = self.sim_wrapper(
             None, axi_master_playback, axi_master_playback, self.args,
             self.arg_types, custom_sources=custom_sources)
 
         self.assertEqual(self.axi_slave.completed_packets, non_empty_packets)
+
+        dut_packets = [[]]
+        for axi_cycle in dut_results['axi_interface']:
+            if axi_cycle['TVALID'] and axi_cycle['TREADY']:
+                dut_packets[-1].append(axi_cycle['TDATA'])
+
+                if axi_cycle['TLAST']:
+                    dut_packets.append([])
+
+        if len(dut_packets) == len(non_empty_packets):
+            # We never recorded the final transaction because we record a
+            # clock cycle later.
+            dut_packets[-1].append(non_empty_packets[-1][-1])
+
+        else:
+            # We need to remove a trailing empty list
+            dut_packets.pop()
+
+        self.assertEqual(dut_packets, non_empty_packets)
+
+    def test_empty_packets(self):
+        '''If the packets argument is an empty list, it should simply have
+        TVALID always false.
+        '''
+
+        packet_list = []
+
+        self.args['packets'] = packet_list
+
+        cycles = 300
+
+        @block
+        def TVALID_checker(clock):
+
+            @always(clock.posedge)
+            def checker():
+                assert self.axi_interface.TVALID == False
+
+            return checker
+
+        custom_sources = [
+            (TVALID_checker, (self.clock,), {}),
+            (self.axi_slave.model, (self.clock, self.axi_interface, 0.5), {})]
+
+        dut_results, ref_results = self.sim_wrapper(
+            cycles, axi_master_playback, axi_master_playback, self.args,
+            self.arg_types, custom_sources=custom_sources)
+
+        self.assertEqual(self.axi_slave.completed_packets, [])
+
+        dut_packets = [[]]
+        for axi_cycle in dut_results['axi_interface']:
+            self.assertFalse(axi_cycle['TVALID'])
 
     def test_None_sets_TVALID_False(self):
         '''Values of None in the packets should set TVALID to False for a
@@ -2311,11 +2367,72 @@ class TestAxiMasterPlaybackBlock(TestCase):
             (exit_checker, (self.clock,), {}),
             (self.axi_slave.model, (self.clock, self.axi_interface, 1.0), {})]
 
-        self.sim_wrapper(
+        dut_results, ref_results = self.sim_wrapper(
             None, axi_master_playback, axi_master_playback, self.args,
             self.arg_types, custom_sources=custom_sources)
 
         self.assertEqual(self.axi_slave.completed_packets, trimmed_packets)
+        self.assertTrue(
+            dut_results['axi_interface'] == ref_results['axi_interface'])
+
+    def test_no_TLAST_on_interface(self):
+        '''A missing TLAST on the interface should be handled with no problem.
+        '''
+        max_packet_length = 20
+        max_new_packets = 50
+        max_val = self.max_rand_val
+
+        axi_interface = AxiStreamInterface(
+            self.data_byte_width, use_TLAST=False)
+
+        packet_list = [
+            [random.randrange(0, max_val) for m
+             in range(random.randrange(0, max_packet_length))] for n
+            in range(random.randrange(0, max_new_packets))]
+
+        self.args['packets'] = packet_list
+
+        non_empty_packets = [
+            packet for packet in packet_list if len(packet) > 0]
+        non_empty_packet_lengths = [
+            len(packet) for packet in non_empty_packets]
+
+        output_data = [val for packet in non_empty_packets for val in packet]
+
+        max_cycles = 50 * max_packet_length * max_new_packets
+
+        @block
+        def exit_checker(clock):
+
+            cycles = [0]
+            @always(clock.posedge)
+            def checker():
+                # A sanity check to make sure we don't hang
+                assert cycles[0] < max_cycles
+                cycles[0] += 1
+
+                if (len(self.axi_slave.current_packet) >= len(output_data)):
+                    raise StopSimulation
+
+            return checker
+
+        self.args['axi_interface'] = axi_interface
+        self.arg_types['axi_interface'] = {
+            'TVALID': 'output', 'TREADY': 'custom', 'TDATA': 'output'}
+
+        custom_sources = [
+            (exit_checker, (self.clock,), {}),
+            (self.axi_slave.model, (self.clock, axi_interface, 0.5), {})]
+
+        dut_results, ref_results = self.sim_wrapper(
+            None, axi_master_playback, axi_master_playback, self.args,
+            self.arg_types, custom_sources=custom_sources)
+
+        self.assertEqual(self.axi_slave.completed_packets, [])
+        self.assertEqual(self.axi_slave.current_packet, output_data)
+
+        self.assertTrue(
+            dut_results['axi_interface'] == ref_results['axi_interface'])
 
     def test_incomplete_last_packet_argument(self):
         '''If the ``incomplete_last_packet`` argument is set to ``True``,
@@ -2324,6 +2441,172 @@ class TestAxiMasterPlaybackBlock(TestCase):
         If the last packet is empty, this effectively negates the
         ``incomplete_last_packet`` argument (since there is no data to not
         assert TLAST on).
+        '''
+
+        @block
+        def exit_checker(clock):
+
+            cycles = [0]
+            @always(clock.posedge)
+            def checker():
+                # A sanity check to make sure we don't hang
+                assert cycles[0] < max_cycles
+                cycles[0] += 1
+                if (len(self.axi_slave.completed_packets) >=
+                    expected_completed_packets):
+
+                    if len(non_empty_packets) > 0:
+                        if (len(self.axi_slave.current_packet) >=
+                            len(non_empty_packets[-1])):
+                            raise StopSimulation
+
+                        elif (len(packet_list[-1]) == 0):
+                            raise StopSimulation
+
+                    else:
+                        raise StopSimulation
+
+            return checker
+
+        custom_sources = [
+            (exit_checker, (self.clock,), {}),
+            (self.axi_slave.model, (self.clock, self.axi_interface, 0.5), {})]
+
+        self.args['incomplete_last_packet'] = True
+        self.arg_types['incomplete_last_packet'] = 'non-signal'
+
+        max_val = self.max_rand_val
+
+        max_packet_length, max_new_packets = (20, 50)
+        n = 5
+
+        self.axi_slave.reset()
+
+        packet_list = [
+            [random.randrange(0, max_val) for m
+             in range(random.randrange(0, max_packet_length))] for n
+            in range(random.randrange(0, max_new_packets))]
+
+        self.args['packets'] = packet_list
+
+        non_empty_packets = [
+            packet for packet in packet_list if len(packet) > 0]
+        non_empty_packet_lengths = [
+            len(packet) for packet in non_empty_packets]
+
+        max_cycles = 50 * max_packet_length * max_new_packets
+
+        expected_completed_packets = len(non_empty_packets)
+        if len(packet_list) > 0:
+            if len(packet_list[-1]) != 0:
+                expected_completed_packets -= 1
+
+        dut_results, ref_results = self.sim_wrapper(
+            None, axi_master_playback, axi_master_playback, self.args,
+            self.arg_types, custom_sources=custom_sources)
+
+        if len(packet_list) > 0:
+            if len(packet_list[-1]) > 0:
+                # a non empty last packet
+                if len(self.axi_slave.completed_packets) > 0:
+                    self.assertEqual(
+                        self.axi_slave.completed_packets,
+                        non_empty_packets[:-1])
+
+                if len(non_empty_packets) > 0:
+                    self.assertEqual(
+                        self.axi_slave.current_packet,
+                        non_empty_packets[-1])
+            else:
+                # The case in which the last packet is empty
+                self.assertEqual(
+                    self.axi_slave.completed_packets,
+                    non_empty_packets)
+                self.assertEqual(self.axi_slave.current_packet, [])
+
+        self.assertTrue(
+            dut_results['axi_interface'] == ref_results['axi_interface'])
+
+    def test_block_converts(self):
+        '''The axi_master_playback block should convert to both VHDL and
+        Verilog.
+        '''
+        max_packet_length = 20
+        max_new_packets = 50
+        max_val = self.max_rand_val
+
+        def val_gen():
+            # Generates Nones about half the time probability
+            val = random.randrange(0, max_val*2)
+            if val >= max_val:
+                return None
+            else:
+                return val
+
+        packet_list = [
+            [val_gen() for m
+             in range(random.randrange(0, max_packet_length))] for n
+            in range(random.randrange(0, max_new_packets))]
+
+        # Make sure we have at least one packet with None at its end.
+        packet_list.append([random.randrange(0, max_val) for m in range(10)])
+        packet_list[-1].append(None)
+
+        None_trimmed_packet_list = [
+            [val for val in packet if val is not None] for packet in
+            packet_list]
+
+        self.args['packets'] = packet_list
+
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            instance = axi_master_playback(**self.args)
+            instance.convert('VHDL', path=tmp_dir)
+            self.assertTrue(os.path.exists(
+                os.path.join(tmp_dir, 'axi_master_playback.vhd')))
+
+            instance = axi_master_playback(**self.args)
+            instance.convert('Verilog', path=tmp_dir)
+            self.assertTrue(os.path.exists(
+                os.path.join(tmp_dir, 'axi_master_playback.v')))
+        finally:
+            shutil.rmtree(tmp_dir)
+
+
+class TestAxiMasterPlaybackBlockExtended(TestCase):
+    '''An extension of the specification of the MyHDL AXI master block.
+    '''
+    def setUp(self):
+
+        self.data_byte_width = 8
+        self.max_rand_val = 2**(8 * self.data_byte_width)
+
+        self.axi_slave = AxiStreamSlaveBFM()
+
+        self.axi_interface = AxiStreamInterface(self.data_byte_width)
+        self.clock = Signal(bool(0))
+
+        self.args = {
+            'clock': self.clock, 'axi_interface': self.axi_interface,
+            'packets': None}
+
+        self.arg_types = {
+            'clock': 'clock',
+            'axi_interface': {'TVALID': 'output', 'TREADY': 'custom',
+                              'TDATA': 'output', 'TLAST': 'output'},
+            'packets': 'non-signal'}
+
+    def sim_wrapper(
+        self, sim_cycles, dut_factory, ref_factory, args, arg_types,
+        **kwargs):
+
+        return myhdl_cosimulation(
+            sim_cycles, dut_factory, ref_factory, args, arg_types, **kwargs)
+
+    def test_incomplete_last_packet_argument(self):
+        '''The specification defined in
+        ``test_incomplete_last_packet_argument`` should hold true for a wide
+        variety of packet lengths and number of packets.
         '''
 
         @block
@@ -2407,105 +2690,6 @@ class TestAxiMasterPlaybackBlock(TestCase):
                             non_empty_packets)
                         self.assertEqual(self.axi_slave.current_packet, [])
 
-    def test_no_TLAST_on_interface(self):
-        '''A missing TLAST on the interface should be handled with no problem.
-        '''
-        max_packet_length = 20
-        max_new_packets = 50
-        max_val = self.max_rand_val
 
-        axi_interface = AxiStreamInterface(
-            self.data_byte_width, use_TLAST=False)
-
-        packet_list = [
-            [random.randrange(0, max_val) for m
-             in range(random.randrange(0, max_packet_length))] for n
-            in range(random.randrange(0, max_new_packets))]
-
-        self.args['packets'] = packet_list
-
-        non_empty_packets = [
-            packet for packet in packet_list if len(packet) > 0]
-        non_empty_packet_lengths = [
-            len(packet) for packet in non_empty_packets]
-
-        output_data = [val for packet in non_empty_packets for val in packet]
-
-        max_cycles = 50 * max_packet_length * max_new_packets
-
-        @block
-        def exit_checker(clock):
-
-            cycles = [0]
-            @always(clock.posedge)
-            def checker():
-                # A sanity check to make sure we don't hang
-                assert cycles[0] < max_cycles
-                cycles[0] += 1
-
-                if (len(self.axi_slave.current_packet) >= len(output_data)):
-                    raise StopSimulation
-
-            return checker
-
-        self.args['axi_interface'] = axi_interface
-        self.arg_types['axi_interface'] = {
-            'TVALID': 'output', 'TREADY': 'custom', 'TDATA': 'output'}
-
-        custom_sources = [
-            (exit_checker, (self.clock,), {}),
-            (self.axi_slave.model, (self.clock, axi_interface, 0.5), {})]
-
-        self.sim_wrapper(
-            None, axi_master_playback, axi_master_playback, self.args,
-            self.arg_types, custom_sources=custom_sources)
-
-        self.assertEqual(self.axi_slave.completed_packets, [])
-        self.assertEqual(self.axi_slave.current_packet, output_data)
-
-    def test_block_converts(self):
-        '''The axi_master_playback block should convert to both VHDL and
-        Verilog.
-        '''
-        max_packet_length = 20
-        max_new_packets = 50
-        max_val = self.max_rand_val
-
-        def val_gen():
-            # Generates Nones about half the time probability
-            val = random.randrange(0, max_val*2)
-            if val >= max_val:
-                return None
-            else:
-                return val
-
-        packet_list = [
-            [val_gen() for m
-             in range(random.randrange(0, max_packet_length))] for n
-            in range(random.randrange(0, max_new_packets))]
-
-        # Make sure we have at least one packet with None at its end.
-        packet_list.append([random.randrange(0, max_val) for m in range(10)])
-        packet_list[-1].append(None)
-
-        None_trimmed_packet_list = [
-            [val for val in packet if val is not None] for packet in
-            packet_list]
-
-        self.args['packets'] = packet_list
-
-        tmp_dir = tempfile.mkdtemp()
-        try:
-            instance = axi_master_playback(**self.args)
-            instance.convert('VHDL', path=tmp_dir)
-            self.assertTrue(os.path.exists(
-                os.path.join(tmp_dir, 'axi_master_playback.vhd')))
-
-            instance = axi_master_playback(**self.args)
-            instance.convert('Verilog', path=tmp_dir)
-            self.assertTrue(os.path.exists(
-                os.path.join(tmp_dir, 'axi_master_playback.v')))
-        finally:
-            shutil.rmtree(tmp_dir)
 
 
