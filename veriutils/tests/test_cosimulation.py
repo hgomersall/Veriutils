@@ -2169,6 +2169,7 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
 
             top = test_obj.dut_convertible_top(tmp_dir)
             top.convert(hdl='VHDL', path=tmp_dir)
+            top.convert(hdl='Verilog', path=tmp_dir)
 
             self.assertTrue(os.path.exists(output_file))
 

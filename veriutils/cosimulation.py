@@ -18,6 +18,7 @@ import csv
 import collections
 import random
 
+import inspect
 
 import sys
 PY3 = sys.version_info[0]
@@ -30,16 +31,67 @@ __all__ = ['SynchronousTest', 'myhdl_cosimulation']
 
 PERIOD = 10
 
+signal_0 = 10
+
+# This is a lot of a hack because we want to keep sane signal names in the
+# namespace that myhdl can find when populating v*_code (using the $name)
+# strategy. We can only really do this in globals().
+_quasi_signal_namespace = {}
+
+def _add_local_signal_to_globals(name, signal):
+
+    # We use the calling stack for our quasi namespace
+    stack_hierarchy = [
+        hierarchy[3] for hierarchy in inspect.stack()[1:-1]][::-1]
+
+    modified_name = name
+
+    if modified_name not in globals():
+        globals()[modified_name] = signal
+
+    else:
+        while modified_name in globals():
+            modified_name = name + '_%06x' % random.randrange(16**6)
+
+        globals()[modified_name] = signal
+
+    containing_dict = _quasi_signal_namespace
+    for each_entry in stack_hierarchy:
+        try:
+            containing_dict = containing_dict[each_entry]
+        except KeyError:
+            containing_dict[each_entry] = {}
+            containing_dict = containing_dict[each_entry]
+
+    containing_dict[name] = modified_name
+
+    return modified_name
+
+def _get_globals_signal_name(name):
+    # We assume we are accessing from the same function that has already
+    # added a signal to the globals
+    stack_hierarchy = [
+        hierarchy[3] for hierarchy in inspect.stack()[1:-1]][::-1]
+
+    containing_dict = _quasi_signal_namespace
+    for each_entry in stack_hierarchy:
+        try:
+            containing_dict = containing_dict[each_entry]
+        except KeyError:
+            raise KeyError('Could not find local signal in the global '
+                           'quasi-namespace. This is likely a Veriutils bug.')
+
+    modifed_name = containing_dict[name]
+
+    return modified_name
+
+def _get_local_signal_from_globals(name):
+
+    modified_name = _get_globals_signal_name(name)
+    return globals()[modified_name]
+
 @block
 def file_writer(filename, signal_list, clock, signal_names=None):
-
-    ## Add clock to the signal list
-    #signal_list.append(clock)
-    ## We also need to add it's name to the name list.
-    ## We don't know the name yet, but it's looked up at conversion time.
-    ## signal_X is the name assigned in this function (where X is the index
-    ## of the signal in the signal_list).
-    #signal_names.append('unsigned $signal_%d' % len(signal_names))
 
     vhdl_signal_str_write_list = []
     vhdl_name_str_write_list = []
@@ -51,14 +103,15 @@ def file_writer(filename, signal_list, clock, signal_names=None):
     verilog_annotations = ''
 
     for n, each_signal in enumerate(signal_list):
-        locals()['signal_' + str(n)] = each_signal
-        locals()['signal_' + str(n)].read = True
+        modified_sig_name = (
+            _add_local_signal_to_globals('signal_' + str(n), each_signal))
+        each_signal.read = True
 
         if signal_names is None:
             vhdl_name_str_write_list.append(
-                'write(output_line, string\'(\"$signal_%d\"));' % n)
+                'write(output_line, string\'(\"$%s\"));' % modified_sig_name)
             verilog_name_str_write_list.append(
-                '$$fwrite(output_file, \"$signal_%d\");' % n)
+                '$$fwrite(output_file, \"$%s\");' % modified_sig_name)
         else:
             # We assign the signal headers from the signal names
             vhdl_name_str_write_list.append(
@@ -67,19 +120,21 @@ def file_writer(filename, signal_list, clock, signal_names=None):
                 '$$fwrite(output_file, \"%s\");' % signal_names[n])
 
             port_name = signal_names[n].split()[-1]
-            annotation = '<name_annotation> $signal_%d %s' % (n, port_name)
+            annotation = '<name_annotation> $%s %s' % (modified_sig_name,
+                                                       port_name)
             vhdl_annotations += '-- %s\n' % annotation
             verilog_annotations += '// %s\n' % annotation
 
         if isinstance(each_signal._val, bool):
             vhdl_signal_str_write_list.append(
-                'write(output_line, std_logic($signal_%d));' % n)
+                'write(output_line, std_logic($%s));' % modified_sig_name)
         else:
             vhdl_signal_str_write_list.append(
-                'write(output_line, std_logic_vector($signal_%d));' % n)
+                'write(output_line, std_logic_vector($%s));' %
+                modified_sig_name)
 
         verilog_signal_str_write_list.append(
-            '$$fwrite(output_file, \"%%b\", $signal_%d);' % n)
+            '$$fwrite(output_file, \"%%b\", $%s);' % modified_sig_name)
 
     vhdl_name_indent = ' ' * 12
     vhdl_name_str_write = (
@@ -154,7 +209,7 @@ end process write_to_file;
         # the dummy writer in order that the used signals can be inferred
         # correctly.
         for n in range(len(signal_list)):
-            print(locals()['signal_' + str(n)])
+            print(_get_local_signal_from_globals('signal_' + str(n)))
 
     return _dummy_file_writer
 
@@ -168,11 +223,14 @@ def axi_stream_file_writer(
     verilog_signal_str_write_list = []
     verilog_name_str_write_list = []
 
-    locals()['signal_TVALID'] = axi_stream_interface.TVALID
-    locals()['signal_TVALID'].read = True
+    signal_TVALID_name = _add_local_signal_to_globals(
+        'signal_TVALID', axi_stream_interface.TVALID)
+    axi_stream_interface.TVALID.read = True
 
-    locals()['signal_TREADY'] = axi_stream_interface.TREADY
-    locals()['signal_TREADY'].driven = 'reg'
+
+    signal_TREADY_name = _add_local_signal_to_globals(
+        'signal_TREADY', axi_stream_interface.TREADY)
+    axi_stream_interface.TREADY.driven = 'reg'
 
     signal_names = ('TDATA', 'TLAST', 'TKEEP', 'TSTRB')
 
@@ -183,15 +241,15 @@ def axi_stream_file_writer(
             # Attribute not available, so ignore it.
             continue
 
-        locals()['signal_' + each_signal_name] = each_signal
-        locals()['signal_' + each_signal_name].read = True
+        modified_sig_name = _add_local_signal_to_globals(
+            'signal_' + each_signal_name, each_signal)
+        each_signal.read = True
 
         if signal_names is None:
             vhdl_name_str_write_list.append(
-                'write(output_line, string\'(\"$signal_%s\"));' %
-                each_signal_name)
+                'write(output_line, string\'(\"$%s\"));' % modified_sig_name)
             verilog_name_str_write_list.append(
-                '$$fwrite(output_file, \"$signal_%s\");' % each_signal_name)
+                '$$fwrite(output_file, \"$%s\");' % modified_sig_name)
         else:
             # We assign the signal headers from the signal names
             vhdl_name_str_write_list.append(
@@ -202,15 +260,14 @@ def axi_stream_file_writer(
 
         if isinstance(each_signal._val, bool):
             vhdl_signal_str_write_list.append(
-                'write(output_line, std_logic($signal_%s));' %
-                each_signal_name)
+                'write(output_line, std_logic($%s));' % modified_sig_name)
         else:
             vhdl_signal_str_write_list.append(
-                'write(output_line, std_logic_vector($signal_%s));' %
-                each_signal_name)
+                'write(output_line, std_logic_vector($%s));' %
+                modified_sig_name)
 
         verilog_signal_str_write_list.append(
-            '$$fwrite(output_file, \"%%b\", $signal_%s);' % each_signal_name)
+            '$$fwrite(output_file, \"%%b\", $%s);' % modified_sig_name)
 
     vhdl_name_indent = ' ' * 16
     vhdl_name_str_write = (
@@ -248,9 +305,9 @@ initial begin: write_to_file_%s
 
     while (1'b1) begin
         @(posedge $clock) begin
-            $signal_TREADY = 1;
+            $%s = 1;
 
-            if ($signal_TREADY & $signal_TVALID) begin
+            if ($%s & $%s) begin
                 %s
                 $$fwrite(output_file, "\\n");
                 $$fflush(output_file);
@@ -259,6 +316,7 @@ initial begin: write_to_file_%s
     end
 end
     ''' % (axi_writer_suffix, filename, verilog_name_str_write,
+           signal_TREADY_name, signal_TVALID_name, signal_TREADY_name,
            verilog_signal_str_write,)
 
     axi_stream_file_writer.vhdl_code = '''
@@ -269,9 +327,9 @@ write_to_file_%s: process ($clock) is
     variable first_line_to_print : boolean := true;
 begin
     if rising_edge($clock) then
-        $signal_TREADY <= '1';
+        $%s <= '1';
 
-        if $signal_TREADY='1' and $signal_TVALID='1' then
+        if $%s='1' and $%s='1' then
             if first_line_to_print then
                 %s
                 writeLine(output_file, output_line);
@@ -282,7 +340,8 @@ begin
         end if;
     end if;
 end process write_to_file_%s;
-    ''' % (axi_writer_suffix, filename, vhdl_name_str_write,
+    ''' % (axi_writer_suffix, filename, signal_TREADY_name,
+           signal_TREADY_name, signal_TVALID_name, vhdl_name_str_write,
            vhdl_signal_str_write, axi_writer_suffix)
 
     @always(clock.posedge)
@@ -290,10 +349,11 @@ end process write_to_file_%s;
         # It's necessary to access all the signals in the right way inside
         # the dummy writer in order that the used signals can be inferred
         # correctly.
-        locals()['TREADY'].next = 1
-        if locals()['TREADY'] and locals()['TVALID']:
+        axi_stream_interface.TREADY.next = 1
+
+        if axi_stream_interface.TVALID and axi_stream_interface.TREADY:
             for signal_name in signal_names:
-                print(locals()[signal_name])
+                print(_get_local_signal_from_globals('signal_' + signal_name))
 
     return _dummy_file_writer
 
@@ -395,17 +455,18 @@ def single_signal_assigner(input_signal, output_signal):
 def deinterfacer(interface, assignment_dict):
 
     assigner_blocks = []
+    signal_dict = {}
     for attr_name in assignment_dict:
-        locals()['input_' + attr_name] = getattr(interface, attr_name)
-        locals()['output_' + attr_name] = assignment_dict[attr_name]
+        signal_dict['input_' + attr_name] = getattr(interface, attr_name)
+        signal_dict['output_' + attr_name] = assignment_dict[attr_name]
 
-        if isinstance(locals()['input_' + attr_name],
+        if isinstance(signal_dict['input_' + attr_name],
                       myhdl._Signal._Signal):
 
             assigner_blocks.append(
                 single_signal_assigner(
-                    locals()['input_' + attr_name],
-                    locals()['output_' + attr_name]))
+                    signal_dict['input_' + attr_name],
+                    signal_dict['output_' + attr_name]))
 
     return assigner_blocks
 
@@ -1169,6 +1230,8 @@ class SynchronousTest(object):
 
         flattened_dut_args = {}
 
+        signal_dict = {}
+
         # Now we only have signals, we can do the right thing with them...
         for each_signal_name in flattened_signal_list:
             each_signal = flattened_args[each_signal_name]
@@ -1189,10 +1252,10 @@ class SynchronousTest(object):
 
             elif flattened_arg_types[each_signal_name] == 'output':
                 # We need to record it
-                locals()[each_signal_name] = each_signal
+                signal_dict[each_signal_name] = each_signal
                 recorded_local_name_list.append(each_signal_name)
                 flattened_dut_args[each_signal_name] = (
-                    locals()[each_signal_name])
+                    signal_dict[each_signal_name])
 
             elif flattened_arg_types[each_signal_name] == 'custom_reset':
                 # This should be played back
@@ -1203,28 +1266,28 @@ class SynchronousTest(object):
 
             elif flattened_arg_types[each_signal_name] == 'axi_stream_out':
                 # We record all the axi signals
-                locals()[each_signal_name] = each_signal
+                signal_dict[each_signal_name] = each_signal
                 recorded_local_name_list.append(each_signal_name)
                 flattened_dut_args[each_signal_name] = (
-                    locals()[each_signal_name])
+                    signal_dict[each_signal_name])
 
             elif flattened_arg_types[each_signal_name] == 'axi_stream_in':
                 # We record all the axi signals
-                locals()[each_signal_name] = each_signal
+                signal_dict[each_signal_name] = each_signal
                 recorded_local_name_list.append(each_signal_name)
                 flattened_dut_args[each_signal_name] = (
-                    locals()[each_signal_name])
+                    signal_dict[each_signal_name])
 
             else:
                 # This should be played back too
                 drive_list = tuple(flattened_ref_outputs[each_signal_name])
-                locals()[each_signal_name] = each_signal
+                signal_dict[each_signal_name] = each_signal
                 instances.append(lut_signal_driver(
-                    locals()[each_signal_name], drive_list, clock,
+                    signal_dict[each_signal_name], drive_list, clock,
                     signal_name=each_signal_name))
 
                 flattened_dut_args[each_signal_name] = (
-                    locals()[each_signal_name])
+                    signal_dict[each_signal_name])
 
         # FIXME
         # The following code should ideally not be necessary. For some reason
@@ -1248,12 +1311,12 @@ class SynchronousTest(object):
 
                     # We need to copy the signal so we only drive the
                     # interface from one place.
-                    copied_signal = copy_signal(locals()[each_signal_name])
-                    locals()[each_signal_name] = copied_signal
+                    copied_signal = copy_signal(signal_dict[each_signal_name])
+                    signal_dict[each_signal_name] = copied_signal
 
                     interface_mapping.setdefault(
                         interface_name, {})[signal_attr_name] = (
-                            locals()[each_signal_name])
+                            signal_dict[each_signal_name])
 
         for each_interface_name in interface_mapping:
             each_interface = self.args[each_interface_name]
@@ -1268,15 +1331,15 @@ class SynchronousTest(object):
         recorded_list_names = []
         for each_signal_name in recorded_local_name_list:
 
-            recorded_list.append(locals()[each_signal_name])
+            recorded_list.append(signal_dict[each_signal_name])
 
-            if isinstance(locals()[each_signal_name].val, intbv):
-                if locals()[each_signal_name].min < 0:
+            if isinstance(signal_dict[each_signal_name].val, intbv):
+                if signal_dict[each_signal_name].min < 0:
                     type_str = 'signed'
                 else:
                     type_str = 'unsigned'
 
-            elif isinstance(locals()[each_signal_name]._init, bool):
+            elif isinstance(signal_dict[each_signal_name]._init, bool):
                 type_str = 'bool'
 
             if each_signal_name not in signal_object_lookup:
@@ -1352,16 +1415,16 @@ class SynchronousTest(object):
                 # Check the signal list isn't already in dut_args before
                 # we add it
                 if sig_list_name not in dut_args:
-                    locals()[sig_list_name] = self.args[sig_list_name]
-                    dut_args[sig_list_name] = locals()[sig_list_name]
+                    signal_dict[sig_list_name] = self.args[sig_list_name]
+                    dut_args[sig_list_name] = signal_dict[sig_list_name]
 
             elif lookup_type[each_arg] == 'interface':
                 interface_name, _ = signal_object_lookup[each_arg]
                 # Check the interface isn't already in dut_args before
                 # we add it
                 if interface_name not in dut_args:
-                    locals()[interface_name] = self.args[interface_name]
-                    dut_args[interface_name] = locals()[interface_name]
+                    signal_dict[interface_name] = self.args[interface_name]
+                    dut_args[interface_name] = signal_dict[interface_name]
 
         # Add back in the non-signals
         for non_signal in non_signal_list:
