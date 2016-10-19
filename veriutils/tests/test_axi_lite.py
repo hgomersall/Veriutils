@@ -203,6 +203,8 @@ class TestAxiLiteMasterBFM(TestCase):
             slave_read_bfm = self.SimpleAxiLiteReadSlaveBFM(
                 clock, self.nreset, self.axi_lite_interface)
 
+            cycles = 4000
+
             reset_low_prob = 0.05
             reset_high_prob = 0.1
             add_write_transaction_prob = 0.05
@@ -281,8 +283,7 @@ class TestAxiLiteMasterBFM(TestCase):
             return check, master_bfm, slave_write_bfm, slave_read_bfm
 
         myhdl_cosimulation(
-            4000, None, testbench, self.args, self.arg_types,
-            vcd_name='test_reset_output')
+            cycles, None, testbench, self.args, self.arg_types)
 
     def test_valid(self):
         ''' Once VALID is asserted it must remain asserted until the handshake
@@ -298,6 +299,8 @@ class TestAxiLiteMasterBFM(TestCase):
                 clock, self.nreset, self.axi_lite_interface)
             slave_read_bfm = self.SimpleAxiLiteReadSlaveBFM(
                 clock, self.nreset, self.axi_lite_interface)
+
+            cycles = 4000
 
             add_write_transaction_prob = 0.05
             add_read_transaction_prob = 0.05
@@ -386,8 +389,7 @@ class TestAxiLiteMasterBFM(TestCase):
             return check, master_bfm, slave_write_bfm, slave_read_bfm
 
         myhdl_cosimulation(
-            4000, None, testbench, self.args, self.arg_types,
-            vcd_name='test_valid_output')
+            cycles, None, testbench, self.args, self.arg_types)
 
     def test_data_write(self):
         ''' The master BFM should send the requested Address and Protections
@@ -408,6 +410,8 @@ class TestAxiLiteMasterBFM(TestCase):
                 clock, self.nreset, self.axi_lite_interface)
             slave_read_bfm = self.SimpleAxiLiteReadSlaveBFM(
                 clock, self.nreset, self.axi_lite_interface)
+
+            cycles = 4000
 
             add_write_transaction_prob = 0.05
 
@@ -517,8 +521,7 @@ class TestAxiLiteMasterBFM(TestCase):
             return check, master_bfm, slave_write_bfm, slave_read_bfm
 
         myhdl_cosimulation(
-            4000, None, testbench, self.args, self.arg_types,
-            vcd_name='test_data_write_output')
+            cycles, None, testbench, self.args, self.arg_types)
 
     def test_data_read(self):
         ''' The master BFM should send the requested Address and Protections
@@ -536,6 +539,8 @@ class TestAxiLiteMasterBFM(TestCase):
                 clock, self.nreset, self.axi_lite_interface)
             slave_read_bfm = self.SimpleAxiLiteReadSlaveBFM(
                 clock, self.nreset, self.axi_lite_interface)
+
+            cycles = 4000
 
             add_read_transaction_prob = 0.05
 
@@ -624,5 +629,4 @@ class TestAxiLiteMasterBFM(TestCase):
             return check, master_bfm, slave_write_bfm, slave_read_bfm
 
         myhdl_cosimulation(
-            4000, None, testbench, self.args, self.arg_types,
-            vcd_name='test_data_read_output')
+            cycles, None, testbench, self.args, self.arg_types)
