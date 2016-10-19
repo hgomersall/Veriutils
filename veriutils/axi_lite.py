@@ -6,8 +6,18 @@ try:
 except ImportError:
     from queue import Queue
 
-class AxiLiteWriteAddressChannel(object):
-    '''The AXI lite write address channel definition
+class AxiLiteInterface(object):
+    '''The AXI lite interface definition
+
+    Creates an AXI4 lite interface object. The signals and parameters
+    are exactly as described in the AMBA AXI and ACE protocol spec.
+
+    For transaction dependencies see AMBA AXI and ACE protocol spec section
+    A3.3.1.
+
+
+    AXI lite write address channel
+    ------------------------------
 
     AXI provides access permissions signals that can be used to protect
     against illegal transactions. AWPROT defines the access permissions for
@@ -24,16 +34,10 @@ class AxiLiteWriteAddressChannel(object):
     |        | 1     | Instruction access  |
     +--------+----------+------------------+
     See the AMBA AXI and ACE protocol spec section A4.7 for more details.
-    '''
 
-    def __init__(self, addr_width):
-        self.AWVALID = Signal(bool(0))
-        self.AWREADY = Signal(bool(0))
-        self.AWADDR = Signal(intbv(0)[addr_width:])
-        self.AWPROT = Signal(intbv(0)[3:])
 
-class AxiLiteWriteDataChannel(object):
-    '''The AXI lite write data channel definition
+    AXI lite write data channel
+    ---------------------------
 
     AXI4-Lite has a fixed data bus width and all transactions are the same
     width as the data bus. The data bus width must be, either 32-bits or
@@ -61,24 +65,10 @@ class AxiLiteWriteDataChannel(object):
         full data bus width
         - To detect write strobe combinations that are not supported and
         provide an error response.
-    '''
 
-    def __init__(self, data_width=32):
 
-        # Check that the data_width is a valid size.
-        if (data_width != 32 and data_width != 64):
-            raise ValueError('data_width must be 32 bits or 64 bits')
-
-        # There must be one strobe line for each byte lane of the data bus.
-        wstrb_width = data_width//8
-
-        self.WVALID = Signal(bool(0))
-        self.WREADY = Signal(bool(0))
-        self.WDATA = Signal(intbv(0)[data_width:])
-        self.WSTRB = Signal(intbv(0)[wstrb_width:])
-
-class AxiLiteWriteResponseChannel(object):
-    '''The AXI lite write response channel definition
+    AXI lite write response channel
+    -------------------------------
 
     The AXI lite protocol provides response signaling for both read and write
     transactions. For write transactions the response information is signaled
@@ -92,15 +82,10 @@ class AxiLiteWriteResponseChannel(object):
     | 0b11  | DECERR   | Decode error          |
     +-------+----------+-----------------------+
     See the AMBA AXI and ACE protocol spec section A3.4.4 for more details.
-    '''
 
-    def __init__(self):
-        self.BVALID = Signal(bool(0))
-        self.BREADY = Signal(bool(0))
-        self.BRESP = Signal(intbv(0)[2:])
 
-class AxiLiteReadAddressChannel(object):
-    '''The AXI lite read address channel definition
+    AXI lite read address channel
+    -----------------------------
 
     AXI provides access permissions signals that can be used to protect
     against illegal transactions. ARPROT defines the access permissions for
@@ -117,16 +102,10 @@ class AxiLiteReadAddressChannel(object):
     |        | 1     | Instruction access  |
     +--------+----------+------------------+
     See the AMBA AXI and ACE protocol spec section A4.7 for more details.
-    '''
 
-    def __init__(self, addr_width):
-        self.ARVALID = Signal(bool(0))
-        self.ARREADY = Signal(bool(0))
-        self.ARADDR = Signal(intbv(0)[addr_width:])
-        self.ARPROT = Signal(intbv(0)[3:])
 
-class AxiLiteReadDataChannel(object):
-    '''The AXI lite read data channel definition
+    AXI lite read data channel
+    --------------------------
 
     AXI4-Lite has a fixed data bus width and all transactions are the same
     width as the data bus. The data bus width must be, either 32-bits or
@@ -144,36 +123,52 @@ class AxiLiteReadDataChannel(object):
     | 0b11  | DECERR   | Decode error          |
     +-------+----------+-----------------------+
     See the AMBA AXI and ACE protocol spec section A3.4.4 for more details.
+
     '''
 
-    def __init__(self, data_width=32):
+    def __init__(self, data_width, addr_width):
 
         # Check that the data_width is a valid size.
         if (data_width != 32 and data_width != 64):
             raise ValueError('data_width must be 32 bits or 64 bits')
 
+        # There must be one strobe line for each byte lane of the data bus.
+        wstrb_width = data_width//8
+
+        # AXI lite write address channel
+        # ------------------------------
+        self.AWVALID = Signal(bool(0))
+        self.AWREADY = Signal(bool(0))
+        self.AWADDR = Signal(intbv(0)[addr_width:])
+        self.AWPROT = Signal(intbv(0)[3:])
+
+        # AXI lite write data channel
+        # ---------------------------
+        self.WVALID = Signal(bool(0))
+        self.WREADY = Signal(bool(0))
+        self.WDATA = Signal(intbv(0)[data_width:])
+        self.WSTRB = Signal(intbv(0)[wstrb_width:])
+
+        # AXI lite write response channel
+        # -------------------------------
+        self.BVALID = Signal(bool(0))
+        self.BREADY = Signal(bool(0))
+        self.BRESP = Signal(intbv(0)[2:])
+
+        # AXI lite read address channel
+        # -----------------------------
+        self.ARVALID = Signal(bool(0))
+        self.ARREADY = Signal(bool(0))
+        self.ARADDR = Signal(intbv(0)[addr_width:])
+        self.ARPROT = Signal(intbv(0)[3:])
+
+        # AXI lite read data channel
+        # --------------------------
         self.RVALID = Signal(bool(0))
         self.RREADY = Signal(bool(0))
         self.RDATA = Signal(intbv(0)[data_width:])
         self.RRESP = Signal(intbv(0)[2:])
 
-class AxiLiteInterface(object):
-    '''The AXI lite interface definition
-
-    Creates an AXI4 lite interface object. The signals and parameters
-    are exactly as described in the AMBA AXI and ACE protocol spec.
-
-    For transaction dependencies see AMBA AXI and ACE protocol spec section
-    A3.3.1.
-    '''
-
-    def __init__(self, data_width, addr_width):
-
-        self.WriteAddrChannel = AxiLiteWriteAddressChannel(addr_width)
-        self.WriteDataChannel = AxiLiteWriteDataChannel(data_width)
-        self.WriteRespChannel = AxiLiteWriteResponseChannel()
-        self.ReadAddrChannel = AxiLiteReadAddressChannel(addr_width)
-        self.ReadDataChannel = AxiLiteReadDataChannel(data_width)
 
 class AxiLiteMasterBFM(object):
     def __init__(self):
@@ -254,11 +249,11 @@ class AxiLiteMasterBFM(object):
 
             if not nreset:
                 # Axi reset so drive control signals low and return to idle.
-                axi_lite_interface.WriteAddrChannel.AWVALID.next = False
+                axi_lite_interface.AWVALID.next = False
                 write_address_state.next = t_write_state.IDLE
-                axi_lite_interface.WriteDataChannel.WVALID.next = False
+                axi_lite_interface.WVALID.next = False
                 write_data_state.next = t_write_state.IDLE
-                axi_lite_interface.WriteRespChannel.BREADY.next = False
+                axi_lite_interface.BREADY.next = False
                 write_response_state.next = t_write_state.IDLE
 
             else:
@@ -283,11 +278,11 @@ class AxiLiteMasterBFM(object):
                             'current_transaction']['address_delay'] == 0:
                             # Commence the transaction. Set the address, valid
                             # and protections.
-                            axi_lite_interface.WriteAddrChannel.AWVALID.next =(
+                            axi_lite_interface.AWVALID.next =(
                                 True)
-                            axi_lite_interface.WriteAddrChannel.AWADDR.next = (
+                            axi_lite_interface.AWADDR.next = (
                                 write_data['current_transaction']['wr_addr'])
-                            axi_lite_interface.WriteAddrChannel.AWPROT.next = (
+                            axi_lite_interface.AWPROT.next = (
                                 write_data['current_transaction']['wr_prot'])
                             write_address_state.next = t_write_state.SEND
                         else:
@@ -301,11 +296,11 @@ class AxiLiteMasterBFM(object):
                         'current_transaction']['address_delay'] == 0:
                         # Commence the transaction. Set the address, valid and
                         # protections.
-                        axi_lite_interface.WriteAddrChannel.AWVALID.next = (
+                        axi_lite_interface.AWVALID.next = (
                             True)
-                        axi_lite_interface.WriteAddrChannel.AWADDR.next = (
+                        axi_lite_interface.AWADDR.next = (
                             write_data['current_transaction']['wr_addr'])
-                        axi_lite_interface.WriteAddrChannel.AWPROT.next = (
+                        axi_lite_interface.AWPROT.next = (
                             write_data['current_transaction']['wr_prot'])
                         write_address_state.next = t_write_state.SEND
                     else:
@@ -314,10 +309,10 @@ class AxiLiteMasterBFM(object):
                             'current_transaction']['address_delay'] -= 1
 
                 if write_address_state == t_write_state.SEND:
-                    if axi_lite_interface.WriteAddrChannel.AWREADY:
+                    if axi_lite_interface.AWREADY:
                         # Wait until handshake has completed and address has
                         # been received
-                        axi_lite_interface.WriteAddrChannel.AWVALID.next = (
+                        axi_lite_interface.AWVALID.next = (
                             False)
                         write_address_state.next = t_write_state.IDLE
 
@@ -329,11 +324,11 @@ class AxiLiteMasterBFM(object):
                             'current_transaction']['data_delay'] == 0:
                             # Commence the transaction. Set the data, valid
                             # and strobes.
-                            axi_lite_interface.WriteDataChannel.WVALID.next =(
+                            axi_lite_interface.WVALID.next =(
                                 True)
-                            axi_lite_interface.WriteDataChannel.WDATA.next = (
+                            axi_lite_interface.WDATA.next = (
                                 write_data['current_transaction']['wr_data'])
-                            axi_lite_interface.WriteDataChannel.WSTRB.next = (
+                            axi_lite_interface.WSTRB.next = (
                                 write_data['current_transaction']['wr_strbs'])
                             write_data_state.next = t_write_state.SEND
                         else:
@@ -346,10 +341,10 @@ class AxiLiteMasterBFM(object):
                     if write_data['current_transaction']['data_delay'] == 0:
                         # Commence the transaction. Set the data, valid and
                         # strobes.
-                        axi_lite_interface.WriteDataChannel.WVALID.next = True
-                        axi_lite_interface.WriteDataChannel.WDATA.next = (
+                        axi_lite_interface.WVALID.next = True
+                        axi_lite_interface.WDATA.next = (
                             write_data['current_transaction']['wr_data'])
-                        axi_lite_interface.WriteDataChannel.WSTRB.next = (
+                        axi_lite_interface.WSTRB.next = (
                             write_data['current_transaction']['wr_strbs'])
                         write_data_state.next = t_write_state.SEND
                     else:
@@ -358,10 +353,10 @@ class AxiLiteMasterBFM(object):
                             'current_transaction']['data_delay'] -= 1
 
                 if write_data_state == t_write_state.SEND:
-                    if axi_lite_interface.WriteDataChannel.WREADY:
+                    if axi_lite_interface.WREADY:
                         # Wait until handshake has completed and data has been
                         # received
-                        axi_lite_interface.WriteDataChannel.WVALID.next = (
+                        axi_lite_interface.WVALID.next = (
                             False)
                         write_data_state.next = t_write_state.IDLE
 
@@ -373,7 +368,7 @@ class AxiLiteMasterBFM(object):
                             'current_transaction'][
                                 'response_ready_delay'] == 0:
                             # Set the ready flag high
-                            axi_lite_interface.WriteRespChannel.BREADY.next =(
+                            axi_lite_interface.BREADY.next =(
                                 True)
                             write_response_state.next = t_write_state.SEND
                         else:
@@ -387,7 +382,7 @@ class AxiLiteMasterBFM(object):
                     if write_data[
                         'current_transaction']['response_ready_delay'] == 0:
                         # Set the ready flag high
-                        axi_lite_interface.WriteRespChannel.BREADY.next = True
+                        axi_lite_interface.BREADY.next = True
                         write_response_state.next = t_write_state.SEND
                     else:
                         # Delay the transaction
@@ -396,13 +391,13 @@ class AxiLiteMasterBFM(object):
                                 'response_ready_delay'] -= 1
 
                 if write_response_state == t_write_state.SEND:
-                    if axi_lite_interface.WriteRespChannel.BVALID:
+                    if axi_lite_interface.BVALID:
                         # Add the response to the write_response_queue
                         self.write_responses.put({'wr_resp': copy.copy(
-                            axi_lite_interface.WriteRespChannel.BRESP.val)})
+                            axi_lite_interface.BRESP.val)})
                         # Wait until response is valid (this means the
                         # handshake is complete).
-                        axi_lite_interface.WriteRespChannel.BREADY.next = (
+                        axi_lite_interface.BREADY.next = (
                             False)
                         write_response_state.next = t_write_state.IDLE
 
@@ -411,9 +406,9 @@ class AxiLiteMasterBFM(object):
 
             if not nreset:
                 # Axi reset so drive control signals low and return to idle.
-                axi_lite_interface.ReadAddrChannel.ARVALID.next = False
+                axi_lite_interface.ARVALID.next = False
                 read_address_state.next = t_read_state.IDLE
-                axi_lite_interface.ReadDataChannel.RREADY.next = False
+                axi_lite_interface.RREADY.next = False
                 read_data_state.next = t_read_state.IDLE
 
             else:
@@ -437,11 +432,11 @@ class AxiLiteMasterBFM(object):
                             'current_transaction']['address_delay'] == 0:
                             # Commence the transaction. Set the address, valid
                             # and protections.
-                            axi_lite_interface.ReadAddrChannel.ARVALID.next =(
+                            axi_lite_interface.ARVALID.next =(
                                 True)
-                            axi_lite_interface.ReadAddrChannel.ARADDR.next = (
+                            axi_lite_interface.ARADDR.next = (
                                 read_data['current_transaction']['rd_addr'])
-                            axi_lite_interface.ReadAddrChannel.ARPROT.next = (
+                            axi_lite_interface.ARPROT.next = (
                                 read_data['current_transaction']['rd_prot'])
                             read_address_state.next = t_read_state.SEND
                         else:
@@ -454,10 +449,10 @@ class AxiLiteMasterBFM(object):
                     if read_data['current_transaction']['address_delay'] == 0:
                         # Commence the transaction. Set the address, valid and
                         # protections.
-                        axi_lite_interface.ReadAddrChannel.ARVALID.next = True
-                        axi_lite_interface.ReadAddrChannel.ARADDR.next = (
+                        axi_lite_interface.ARVALID.next = True
+                        axi_lite_interface.ARADDR.next = (
                             read_data['current_transaction']['rd_addr'])
-                        axi_lite_interface.ReadAddrChannel.ARPROT.next = (
+                        axi_lite_interface.ARPROT.next = (
                             read_data['current_transaction']['rd_prot'])
                         read_address_state.next = t_read_state.SEND
                     else:
@@ -466,10 +461,10 @@ class AxiLiteMasterBFM(object):
                             'current_transaction']['address_delay'] -= 1
 
                 if read_address_state == t_read_state.SEND:
-                    if axi_lite_interface.ReadAddrChannel.ARREADY:
+                    if axi_lite_interface.ARREADY:
                         # Wait until handshake has completed and address has
                         # been received
-                        axi_lite_interface.ReadAddrChannel.ARVALID.next = (
+                        axi_lite_interface.ARVALID.next = (
                             False)
                         read_address_state.next = t_read_state.IDLE
 
@@ -481,7 +476,7 @@ class AxiLiteMasterBFM(object):
                             'current_transaction']['data_delay'] == 0:
                             # Commence the transaction. Set the data, valid
                             # and protections.
-                            axi_lite_interface.ReadDataChannel.RREADY.next = (
+                            axi_lite_interface.RREADY.next = (
                                 True)
                             read_data_state.next = t_read_state.SEND
                         else:
@@ -494,7 +489,7 @@ class AxiLiteMasterBFM(object):
                     if read_data['current_transaction']['data_delay'] == 0:
                         # Commence the transaction. Set the data, valid and
                         # protections.
-                        axi_lite_interface.ReadDataChannel.RREADY.next = True
+                        axi_lite_interface.RREADY.next = True
                         read_data_state.next = t_read_state.SEND
                     else:
                         # Delay the transaction
@@ -502,17 +497,17 @@ class AxiLiteMasterBFM(object):
                             'current_transaction']['data_delay'] -= 1
 
                 if read_data_state == t_read_state.SEND:
-                    if axi_lite_interface.ReadDataChannel.RVALID:
+                    if axi_lite_interface.RVALID:
                         # Add the response to the read_response_queue
                         self.read_responses.put(
                             {'rd_data': copy.copy(
-                                axi_lite_interface.ReadDataChannel.RDATA.val),
+                                axi_lite_interface.RDATA.val),
                              'rd_resp': copy.copy(
-                                 axi_lite_interface.ReadDataChannel.RRESP.val)
+                                 axi_lite_interface.RRESP.val)
                             })
                         # Wait until handshake has completed and data has been
                         # received
-                        axi_lite_interface.ReadDataChannel.RREADY.next = False
+                        axi_lite_interface.RREADY.next = False
                         read_data_state.next = t_read_state.IDLE
 
         return write, read

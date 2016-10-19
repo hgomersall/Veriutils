@@ -45,91 +45,91 @@ class TestAxiLiteMasterBFM(TestCase):
 
             if not nreset:
                 # Axi reset so drive control signals low and return to idle.
-                axi_lite_interface.WriteAddrChannel.AWREADY.next = False
-                axi_lite_interface.WriteDataChannel.WREADY.next = False
-                axi_lite_interface.WriteRespChannel.BVALID.next = False
+                axi_lite_interface.AWREADY.next = False
+                axi_lite_interface.WREADY.next = False
+                axi_lite_interface.BVALID.next = False
                 write_state.next = t_write_state.IDLE
 
             else:
-                if (not axi_lite_interface.WriteAddrChannel.AWREADY and
+                if (not axi_lite_interface.AWREADY and
                     random.random() < addr_high_prob):
                     # Randomly set ready to receive address.
-                    axi_lite_interface.WriteAddrChannel.AWREADY.next = (
+                    axi_lite_interface.AWREADY.next = (
                         True)
-                elif (axi_lite_interface.WriteAddrChannel.AWREADY and
+                elif (axi_lite_interface.AWREADY and
                     random.random() < addr_low_prob):
-                    axi_lite_interface.WriteAddrChannel.AWREADY.next = (
+                    axi_lite_interface.AWREADY.next = (
                         False)
 
-                if (not axi_lite_interface.WriteDataChannel.WREADY and
+                if (not axi_lite_interface.WREADY and
                     random.random() < data_high_prob):
                     # Randomly set ready to receive data.
-                    axi_lite_interface.WriteDataChannel.WREADY.next = (
+                    axi_lite_interface.WREADY.next = (
                         True)
-                elif (axi_lite_interface.WriteDataChannel.WREADY and
+                elif (axi_lite_interface.WREADY and
                       random.random() < data_low_prob):
-                    axi_lite_interface.WriteDataChannel.WREADY.next = (
+                    axi_lite_interface.WREADY.next = (
                         False)
 
                 if write_state == t_write_state.IDLE:
                     # Waiting to receive address and data.
-                    if (axi_lite_interface.WriteAddrChannel.AWREADY and
-                        axi_lite_interface.WriteAddrChannel.AWVALID and
-                        axi_lite_interface.WriteDataChannel.WREADY and
-                        axi_lite_interface.WriteDataChannel.WVALID):
+                    if (axi_lite_interface.AWREADY and
+                        axi_lite_interface.AWVALID and
+                        axi_lite_interface.WREADY and
+                        axi_lite_interface.WVALID):
                         # Received address and data from the master.
-                        axi_lite_interface.WriteAddrChannel.AWREADY.next = (
+                        axi_lite_interface.AWREADY.next = (
                             False)
-                        axi_lite_interface.WriteDataChannel.WREADY.next = (
+                        axi_lite_interface.WREADY.next = (
                             False)
                         write_state.next = t_write_state.RESPOND
 
-                    elif (axi_lite_interface.WriteAddrChannel.AWREADY and
-                          axi_lite_interface.WriteAddrChannel.AWVALID):
+                    elif (axi_lite_interface.AWREADY and
+                          axi_lite_interface.AWVALID):
                         # Received address from the master.
-                        axi_lite_interface.WriteAddrChannel.AWREADY.next = (
+                        axi_lite_interface.AWREADY.next = (
                             False)
                         write_state.next = t_write_state.ADDR_RECEIVED
 
-                    elif (axi_lite_interface.WriteDataChannel.WREADY and
-                          axi_lite_interface.WriteDataChannel.WVALID):
+                    elif (axi_lite_interface.WREADY and
+                          axi_lite_interface.WVALID):
                         # Received data from the master.
-                        axi_lite_interface.WriteDataChannel.WREADY.next = (
+                        axi_lite_interface.WREADY.next = (
                             False)
                         write_state.next = t_write_state.DATA_RECEIVED
 
                 elif write_state == t_write_state.ADDR_RECEIVED:
-                    if (axi_lite_interface.WriteDataChannel.WREADY and
-                        axi_lite_interface.WriteDataChannel.WVALID):
+                    if (axi_lite_interface.WREADY and
+                        axi_lite_interface.WVALID):
                         # Received data from the master.
-                        axi_lite_interface.WriteDataChannel.WREADY.next = (
+                        axi_lite_interface.WREADY.next = (
                             False)
                         write_state.next = t_write_state.RESPOND
 
                 elif write_state == t_write_state.DATA_RECEIVED:
-                    if (axi_lite_interface.WriteAddrChannel.AWREADY and
-                        axi_lite_interface.WriteAddrChannel.AWVALID):
+                    if (axi_lite_interface.AWREADY and
+                        axi_lite_interface.AWVALID):
                         # Received address from the master.
-                        axi_lite_interface.WriteAddrChannel.AWREADY.next = (
+                        axi_lite_interface.AWREADY.next = (
                             False)
                         write_state.next = t_write_state.RESPOND
 
                 elif write_state == t_write_state.RESPOND:
-                    if not axi_lite_interface.WriteRespChannel.BVALID:
+                    if not axi_lite_interface.BVALID:
                         # Valid signal has not yet been set.
                         if random.random() < resp_valid_prob:
                             # Wait a random period before setting the valid
                             # signal.
-                            axi_lite_interface.WriteRespChannel.BVALID.next =(
+                            axi_lite_interface.BVALID.next =(
                                 True)
-                            axi_lite_interface.WriteRespChannel.BRESP.next =(
+                            axi_lite_interface.BRESP.next =(
                                 random.choice(self.responses))
 
-                    elif (axi_lite_interface.WriteRespChannel.BVALID and
-                          axi_lite_interface.WriteRespChannel.BREADY):
+                    elif (axi_lite_interface.BVALID and
+                          axi_lite_interface.BREADY):
                         # Response has been received so set the valid signal
                         # low again.
-                        axi_lite_interface.WriteRespChannel.BVALID.next = (
+                        axi_lite_interface.BVALID.next = (
                             False)
                         write_state.next = t_write_state.IDLE
 
@@ -148,39 +148,39 @@ class TestAxiLiteMasterBFM(TestCase):
 
             if not nreset:
                 # Axi reset so drive control signals low and return to idle.
-                axi_lite_interface.ReadAddrChannel.ARREADY.next = False
-                axi_lite_interface.ReadDataChannel.RVALID.next = False
+                axi_lite_interface.ARREADY.next = False
+                axi_lite_interface.RVALID.next = False
                 read_state.next = t_read_state.IDLE
 
             else:
-                if (not axi_lite_interface.ReadAddrChannel.ARREADY and
+                if (not axi_lite_interface.ARREADY and
                     random.random() < addr_high_prob):
                     # Randomly set ready to receive address.
-                    axi_lite_interface.ReadAddrChannel.ARREADY.next = (
+                    axi_lite_interface.ARREADY.next = (
                         True)
-                elif (axi_lite_interface.ReadAddrChannel.ARREADY and
+                elif (axi_lite_interface.ARREADY and
                       random.random() < addr_low_prob):
-                    axi_lite_interface.ReadAddrChannel.ARREADY.next = (
+                    axi_lite_interface.ARREADY.next = (
                         False)
 
                 if read_state == t_read_state.IDLE:
-                    if (axi_lite_interface.ReadAddrChannel.ARREADY and
-                        axi_lite_interface.ReadAddrChannel.ARVALID):
+                    if (axi_lite_interface.ARREADY and
+                        axi_lite_interface.ARVALID):
                         # Received the read address so respond with the data.
-                        axi_lite_interface.ReadAddrChannel.ARREADY.next = (
+                        axi_lite_interface.ARREADY.next = (
                             False)
-                        axi_lite_interface.ReadDataChannel.RVALID.next = True
-                        axi_lite_interface.ReadDataChannel.RDATA.next = (
+                        axi_lite_interface.RVALID.next = True
+                        axi_lite_interface.RDATA.next = (
                             random.randint(0, 2**self.data_width-1))
-                        axi_lite_interface.WriteRespChannel.BRESP.next =(
+                        axi_lite_interface.BRESP.next =(
                                 random.choice(self.responses))
                         read_state.next = t_read_state.RESPOND
 
                 if read_state == t_read_state.RESPOND:
-                    if (axi_lite_interface.ReadDataChannel.RVALID and
-                        axi_lite_interface.ReadDataChannel.RREADY):
+                    if (axi_lite_interface.RVALID and
+                        axi_lite_interface.RREADY):
                         # The response has been received.
-                        axi_lite_interface.ReadDataChannel.RVALID.next = False
+                        axi_lite_interface.RVALID.next = False
                         read_state.next = t_read_state.IDLE
 
         return read
@@ -194,6 +194,8 @@ class TestAxiLiteMasterBFM(TestCase):
         We do not care about the other signals.
         '''
 
+        cycles = 4000
+
         @block
         def testbench(clock):
             master_bfm = self.axi_lite.model(
@@ -202,8 +204,6 @@ class TestAxiLiteMasterBFM(TestCase):
                 clock, self.nreset, self.axi_lite_interface)
             slave_read_bfm = self.SimpleAxiLiteReadSlaveBFM(
                 clock, self.nreset, self.axi_lite_interface)
-
-            cycles = 4000
 
             reset_low_prob = 0.05
             reset_high_prob = 0.1
@@ -230,7 +230,7 @@ class TestAxiLiteMasterBFM(TestCase):
                         write_strobes=random.randint(
                             0, 2**self.wstrb_width-1),
                         write_protection=random.randint(0, 2**len(
-                            self.axi_lite_interface.WriteAddrChannel.AWPROT)-1),
+                            self.axi_lite_interface.AWPROT)-1),
                         address_delay=random.randint(0, 15),
                         data_delay=random.randint(0, 15),
                         response_ready_delay=random.randint(10, 25))
@@ -240,7 +240,7 @@ class TestAxiLiteMasterBFM(TestCase):
                     self.axi_lite.add_read_transaction(
                         read_address=random.randint(0, 2**self.addr_width-1),
                         read_protection=random.randint(0, 2**len(
-                            self.axi_lite_interface.ReadAddrChannel.ARPROT)-1),
+                            self.axi_lite_interface.ARPROT)-1),
                         address_delay=random.randint(0, 15),
                         data_delay=random.randint(0, 15))
 
@@ -270,11 +270,11 @@ class TestAxiLiteMasterBFM(TestCase):
 
                 if check_state == t_check_state.CHECK_RESET:
                     assert(
-                        self.axi_lite_interface.ReadAddrChannel.ARVALID==False)
+                        self.axi_lite_interface.ARVALID==False)
                     assert(
-                        self.axi_lite_interface.WriteAddrChannel.AWVALID==False)
+                        self.axi_lite_interface.AWVALID==False)
                     assert(
-                        self.axi_lite_interface.WriteDataChannel.WVALID==False)
+                        self.axi_lite_interface.WVALID==False)
 
                     if self.nreset:
                         # No longer being reset so return to IDLE
@@ -291,6 +291,8 @@ class TestAxiLiteMasterBFM(TestCase):
         asserted.
         '''
 
+        cycles = 4000
+
         @block
         def testbench(clock):
             master_bfm = self.axi_lite.model(
@@ -299,8 +301,6 @@ class TestAxiLiteMasterBFM(TestCase):
                 clock, self.nreset, self.axi_lite_interface)
             slave_read_bfm = self.SimpleAxiLiteReadSlaveBFM(
                 clock, self.nreset, self.axi_lite_interface)
-
-            cycles = 4000
 
             add_write_transaction_prob = 0.05
             add_read_transaction_prob = 0.05
@@ -321,7 +321,7 @@ class TestAxiLiteMasterBFM(TestCase):
                         write_strobes=random.randint(
                             0, 2**self.wstrb_width-1),
                         write_protection=random.randint(0, 2**len(
-                            self.axi_lite_interface.WriteAddrChannel.AWPROT)-1),
+                            self.axi_lite_interface.AWPROT)-1),
                         address_delay=random.randint(0, 15),
                         data_delay=random.randint(0, 15),
                         response_ready_delay=random.randint(10, 25))
@@ -331,7 +331,7 @@ class TestAxiLiteMasterBFM(TestCase):
                     self.axi_lite.add_read_transaction(
                         read_address=random.randint(0, 2**self.addr_width-1),
                         read_protection=random.randint(0, 2**len(
-                            self.axi_lite_interface.ReadAddrChannel.ARPROT)-1),
+                            self.axi_lite_interface.ARPROT)-1),
                         address_delay=random.randint(0, 15),
                         data_delay=random.randint(0, 15))
 
@@ -344,47 +344,47 @@ class TestAxiLiteMasterBFM(TestCase):
                 except queue.Empty:
                     pass
 
-                if (self.axi_lite_interface.WriteAddrChannel.AWVALID and
-                    self.axi_lite_interface.WriteAddrChannel.AWREADY):
+                if (self.axi_lite_interface.AWVALID and
+                    self.axi_lite_interface.AWREADY):
                     # Handshake has occured do not need to check that AWVALID
                     # stays high.
                     check_enable['awvalid'] = False
-                elif self.axi_lite_interface.WriteAddrChannel.AWVALID:
+                elif self.axi_lite_interface.AWVALID:
                     # Once AWVALID is set it should remain high until the
                     # handshake occurs
                     check_enable['awvalid'] = True
 
-                if (self.axi_lite_interface.WriteDataChannel.WVALID and
-                    self.axi_lite_interface.WriteDataChannel.WREADY):
+                if (self.axi_lite_interface.WVALID and
+                    self.axi_lite_interface.WREADY):
                     # Handshake has occured do not need to check that WVALID
                     # stays high.
                     check_enable['wvalid'] = False
-                elif self.axi_lite_interface.WriteDataChannel.WVALID:
+                elif self.axi_lite_interface.WVALID:
                     # Once WVALID is set it should remain high until the
                     # handshake occurs
                     check_enable['wvalid'] = True
 
-                if (self.axi_lite_interface.ReadAddrChannel.ARVALID and
-                    self.axi_lite_interface.ReadAddrChannel.ARREADY):
+                if (self.axi_lite_interface.ARVALID and
+                    self.axi_lite_interface.ARREADY):
                     # Handshake has occured do not need to check that ARVALID
                     # stays high.
                     check_enable['arvalid'] = False
-                elif self.axi_lite_interface.ReadAddrChannel.ARVALID:
+                elif self.axi_lite_interface.ARVALID:
                     # Once ARVALID is set it should remain high until the
                     # handshake occurs
                     check_enable['arvalid'] = True
 
                 if check_enable['awvalid']:
                     assert(
-                        self.axi_lite_interface.WriteAddrChannel.AWVALID == True)
+                        self.axi_lite_interface.AWVALID == True)
 
                 if check_enable['wvalid']:
                     assert(
-                        self.axi_lite_interface.WriteDataChannel.WVALID == True)
+                        self.axi_lite_interface.WVALID == True)
 
                 if check_enable['arvalid']:
                     assert(
-                        self.axi_lite_interface.ReadAddrChannel.ARVALID == True)
+                        self.axi_lite_interface.ARVALID == True)
 
             return check, master_bfm, slave_write_bfm, slave_read_bfm
 
@@ -402,6 +402,8 @@ class TestAxiLiteMasterBFM(TestCase):
         transaction.
         '''
 
+        cycles = 4000
+
         @block
         def testbench(clock):
             master_bfm = self.axi_lite.model(
@@ -410,8 +412,6 @@ class TestAxiLiteMasterBFM(TestCase):
                 clock, self.nreset, self.axi_lite_interface)
             slave_read_bfm = self.SimpleAxiLiteReadSlaveBFM(
                 clock, self.nreset, self.axi_lite_interface)
-
-            cycles = 4000
 
             add_write_transaction_prob = 0.05
 
@@ -444,7 +444,7 @@ class TestAxiLiteMasterBFM(TestCase):
                         expected['strbs'] = random.randint(
                             0, 2**self.wstrb_width-1)
                         expected['prot'] = random.randint(0, 2**len(
-                            self.axi_lite_interface.WriteAddrChannel.AWPROT)-1)
+                            self.axi_lite_interface.AWPROT)-1)
 
                         # Set up an axi lite write transaction
                         self.axi_lite.add_write_transaction(
@@ -463,38 +463,38 @@ class TestAxiLiteMasterBFM(TestCase):
                         check_state.next = t_check_state.TRANSACTIONS
 
                 elif check_state == t_check_state.TRANSACTIONS:
-                    if self.axi_lite_interface.WriteAddrChannel.AWVALID:
+                    if self.axi_lite_interface.AWVALID:
                         # If valid is asserted, the requested address and
                         # protection should be output.
                         assert(
-                            self.axi_lite_interface.WriteAddrChannel.AWADDR==
+                            self.axi_lite_interface.AWADDR==
                             expected['addr'])
                         assert(
-                            self.axi_lite_interface.WriteAddrChannel.AWPROT==
+                            self.axi_lite_interface.AWPROT==
                             expected['prot'])
-                        if self.axi_lite_interface.WriteAddrChannel.AWREADY:
+                        if self.axi_lite_interface.AWREADY:
                             # Handshake has occurred.
                             control['addr_sent'] = True
 
-                    if self.axi_lite_interface.WriteDataChannel.WVALID:
+                    if self.axi_lite_interface.WVALID:
                         # If valid is asserted, the requested data and strobes
                         # should be output.
                         assert(
-                            self.axi_lite_interface.WriteDataChannel.WDATA==
+                            self.axi_lite_interface.WDATA==
                             expected['data'])
                         assert(
-                            self.axi_lite_interface.WriteDataChannel.WSTRB==
+                            self.axi_lite_interface.WSTRB==
                             expected['strbs'])
-                        if self.axi_lite_interface.WriteDataChannel.WREADY:
+                        if self.axi_lite_interface.WREADY:
                             # Handshake has occurred.
                             control['data_sent'] = True
 
-                    if (self.axi_lite_interface.WriteRespChannel.BVALID and
-                        self.axi_lite_interface.WriteRespChannel.BREADY):
+                    if (self.axi_lite_interface.BVALID and
+                        self.axi_lite_interface.BREADY):
                         # Record the response to check that the BFM receives
                         # and reports it correctly
                         expected['resp'] = (
-                            self.axi_lite_interface.WriteRespChannel.BRESP)
+                            self.axi_lite_interface.BRESP)
                         # Handshake has occurred.
                         control['resp_sent'] = True
 
@@ -531,6 +531,8 @@ class TestAxiLiteMasterBFM(TestCase):
         response transaction.
         '''
 
+        cycles = 4000
+
         @block
         def testbench(clock):
             master_bfm = self.axi_lite.model(
@@ -539,8 +541,6 @@ class TestAxiLiteMasterBFM(TestCase):
                 clock, self.nreset, self.axi_lite_interface)
             slave_read_bfm = self.SimpleAxiLiteReadSlaveBFM(
                 clock, self.nreset, self.axi_lite_interface)
-
-            cycles = 4000
 
             add_read_transaction_prob = 0.05
 
@@ -567,7 +567,7 @@ class TestAxiLiteMasterBFM(TestCase):
                         expected['addr'] = random.randint(
                             0, 2**self.addr_width-1)
                         expected['prot'] = random.randint(0, 2**len(
-                            self.axi_lite_interface.ReadAddrChannel.ARPROT)-1)
+                            self.axi_lite_interface.ARPROT)-1)
 
                         # At random times set up an axi lite read transaction
                         self.axi_lite.add_read_transaction(
@@ -582,27 +582,27 @@ class TestAxiLiteMasterBFM(TestCase):
                         check_state.next = t_check_state.TRANSACTIONS
 
                 elif check_state == t_check_state.TRANSACTIONS:
-                    if self.axi_lite_interface.ReadAddrChannel.ARVALID:
+                    if self.axi_lite_interface.ARVALID:
                         # If valid is asserted, the requested address and
                         # protection should be output.
                         assert(
-                            self.axi_lite_interface.ReadAddrChannel.ARADDR==
+                            self.axi_lite_interface.ARADDR==
                             expected['addr'])
                         assert(
-                            self.axi_lite_interface.ReadAddrChannel.ARPROT==
+                            self.axi_lite_interface.ARPROT==
                             expected['prot'])
-                        if self.axi_lite_interface.ReadAddrChannel.ARREADY:
+                        if self.axi_lite_interface.ARREADY:
                             # Handshake has occurred.
                             control['addr_sent'] = True
 
-                    if (self.axi_lite_interface.ReadDataChannel.RVALID and
-                        self.axi_lite_interface.ReadDataChannel.RREADY):
+                    if (self.axi_lite_interface.RVALID and
+                        self.axi_lite_interface.RREADY):
                         # Record the response to check that the BFM receives
                         # and reports it correctly
                         expected['data'] = (
-                            self.axi_lite_interface.ReadDataChannel.RDATA)
+                            self.axi_lite_interface.RDATA)
                         expected['resp'] = (
-                            self.axi_lite_interface.ReadDataChannel.RRESP)
+                            self.axi_lite_interface.RRESP)
                         # Handshake has occurred.
                         control['data_sent'] = True
 
