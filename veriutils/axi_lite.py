@@ -223,7 +223,7 @@ class AxiLiteMasterBFM(object):
                                     'data_delay': data_delay,})
 
     @block
-    def model(self, clock, nreset, axi_lite_interface):
+    def model(self, clock, reset, axi_lite_interface):
 
         # Define and create the write state machines
         t_write_state = enum('IDLE', 'DELAY', 'SEND')
@@ -247,7 +247,7 @@ class AxiLiteMasterBFM(object):
         @always(clock.posedge)
         def write():
 
-            if not nreset:
+            if reset:
                 # Axi reset so drive control signals low and return to idle.
                 axi_lite_interface.AWVALID.next = False
                 write_address_state.next = t_write_state.IDLE
@@ -404,7 +404,7 @@ class AxiLiteMasterBFM(object):
         @always(clock.posedge)
         def read():
 
-            if not nreset:
+            if reset:
                 # Axi reset so drive control signals low and return to idle.
                 axi_lite_interface.ARVALID.next = False
                 read_address_state.next = t_read_state.IDLE
