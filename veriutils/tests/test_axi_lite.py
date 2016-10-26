@@ -7,6 +7,73 @@ try:
 except ImportError:
     import queue
 
+class TestAxiLiteInterface(TestCase):
+    def test_AWPROT(self):
+        '''There should be an optional AWPROT attribute that is an unsigned
+        intbv Signal.
+        '''
+        data_width = 32
+        addr_width = 4
+
+        # The default case is to include it
+        interface = AxiLiteInterface(
+            data_width, addr_width)
+        self.assertTrue(hasattr(interface, 'AWPROT'))
+
+        # Explicitly included
+        interface = AxiLiteInterface(
+            data_width, addr_width, use_AWPROT=True)
+        self.assertTrue(hasattr(interface, 'AWPROT'))
+
+        # Explicitly excluded
+        interface = AxiLiteInterface(
+            data_width, addr_width, use_AWPROT=False)
+        self.assertFalse(hasattr(interface, 'AWPROT'))
+
+    def test_ARPROT(self):
+        '''There should be an optional ARPROT attribute that is an unsigned
+        intbv Signal.
+        '''
+        data_width = 32
+        addr_width = 4
+
+        # The default case is to include it
+        interface = AxiLiteInterface(
+            data_width, addr_width)
+        self.assertTrue(hasattr(interface, 'ARPROT'))
+
+        # Explicitly included
+        interface = AxiLiteInterface(
+            data_width, addr_width, use_ARPROT=True)
+        self.assertTrue(hasattr(interface, 'ARPROT'))
+
+        # Explicitly excluded
+        interface = AxiLiteInterface(
+            data_width, addr_width, use_ARPROT=False)
+        self.assertFalse(hasattr(interface, 'ARPROT'))
+
+    def test_WSTRB(self):
+        '''There should be an optional WSTRB attribute that is an unsigned
+        intbv Signal.
+        '''
+        data_width = 32
+        addr_width = 4
+
+        # The default case is to include it
+        interface = AxiLiteInterface(
+            data_width, addr_width)
+        self.assertTrue(hasattr(interface, 'WSTRB'))
+
+        # Explicitly included
+        interface = AxiLiteInterface(
+            data_width, addr_width,use_WSTRB=True)
+        self.assertTrue(hasattr(interface, 'WSTRB'))
+
+        # Explicitly excluded
+        interface = AxiLiteInterface(
+            data_width, addr_width, use_WSTRB=False)
+        self.assertFalse(hasattr(interface, 'WSTRB'))
+
 class TestAxiLiteMasterBFM(TestCase):
     ''' There should be an AXI Lite Bus Functional Model that implements
     a programmable AXI Lite protocol from the master side.

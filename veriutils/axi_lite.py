@@ -126,7 +126,9 @@ class AxiLiteInterface(object):
 
     '''
 
-    def __init__(self, data_width, addr_width):
+    def __init__(
+        self, data_width, addr_width, use_AWPROT=True, use_ARPROT=True,
+        use_WSTRB=True):
 
         # Check that the data_width is a valid size.
         if (data_width != 32 and data_width != 64):
@@ -140,14 +142,16 @@ class AxiLiteInterface(object):
         self.AWVALID = Signal(bool(0))
         self.AWREADY = Signal(bool(0))
         self.AWADDR = Signal(intbv(0)[addr_width:])
-        self.AWPROT = Signal(intbv(0)[3:])
+        if use_AWPROT:
+            self.AWPROT = Signal(intbv(0)[3:])
 
         # AXI lite write data channel
         # ---------------------------
         self.WVALID = Signal(bool(0))
         self.WREADY = Signal(bool(0))
         self.WDATA = Signal(intbv(0)[data_width:])
-        self.WSTRB = Signal(intbv(0)[wstrb_width:])
+        if use_WSTRB:
+            self.WSTRB = Signal(intbv(0)[wstrb_width:])
 
         # AXI lite write response channel
         # -------------------------------
@@ -160,7 +164,8 @@ class AxiLiteInterface(object):
         self.ARVALID = Signal(bool(0))
         self.ARREADY = Signal(bool(0))
         self.ARADDR = Signal(intbv(0)[addr_width:])
-        self.ARPROT = Signal(intbv(0)[3:])
+        if use_ARPROT:
+            self.ARPROT = Signal(intbv(0)[3:])
 
         # AXI lite read data channel
         # --------------------------
@@ -169,6 +174,14 @@ class AxiLiteInterface(object):
         self.RDATA = Signal(intbv(0)[data_width:])
         self.RRESP = Signal(intbv(0)[2:])
 
+@block
+def optional_signals(signal_1, signal_2):
+
+    @always_comb
+    def assign():
+        signal_2.next = signal_1
+
+    return assign
 
 class AxiLiteMasterBFM(object):
     def __init__(self):
@@ -244,6 +257,38 @@ class AxiLiteMasterBFM(object):
         read_data = {'current_transaction': None,
                      'start_transaction': False,}
 
+        # Create internal signals for the protections.
+        internal_awprot = Signal(intbv(0)[3:])
+        internal_arprot = Signal(intbv(0)[3:])
+        internal_wstrb = Signal(intbv(0)[len(axi_lite_interface.WDATA)//8:])
+
+        optional_signal_assignments = []
+
+        try:
+            axi_lite_interface.AWPROT
+            use_AWPROT = True
+            optional_signal_assignments.append(
+                optional_signals(internal_awprot, axi_lite_interface.AWPROT))
+        except AttributeError:
+            use_AWPROT = False
+
+        try:
+            axi_lite_interface.ARPROT
+            use_ARPROT = True
+            optional_signal_assignments.append(
+                optional_signals(internal_arprot, axi_lite_interface.ARPROT))
+        except AttributeError:
+            use_ARPROT = False
+
+        try:
+            axi_lite_interface.WSTRB
+            use_WSTRB = True
+            optional_signal_assignments.append(
+                optional_signals(internal_wstrb, axi_lite_interface.WSTRB))
+        except AttributeError:
+            use_WSTRB = False
+
+
         @always(clock.posedge)
         def write():
 
@@ -282,8 +327,9 @@ class AxiLiteMasterBFM(object):
                                 True)
                             axi_lite_interface.AWADDR.next = (
                                 write_data['current_transaction']['wr_addr'])
-                            axi_lite_interface.AWPROT.next = (
-                                write_data['current_transaction']['wr_prot'])
+                            if use_AWPROT:
+                                internal_awprot.next = (
+                                    write_data['current_transaction']['wr_prot'])
                             write_address_state.next = t_write_state.SEND
                         else:
                             # Delay the transaction
@@ -300,8 +346,9 @@ class AxiLiteMasterBFM(object):
                             True)
                         axi_lite_interface.AWADDR.next = (
                             write_data['current_transaction']['wr_addr'])
-                        axi_lite_interface.AWPROT.next = (
-                            write_data['current_transaction']['wr_prot'])
+                        if use_AWPROT:
+                            internal_awprot.next = (
+                                write_data['current_transaction']['wr_prot'])
                         write_address_state.next = t_write_state.SEND
                     else:
                         # Delay the transaction
@@ -328,8 +375,9 @@ class AxiLiteMasterBFM(object):
                                 True)
                             axi_lite_interface.WDATA.next = (
                                 write_data['current_transaction']['wr_data'])
-                            axi_lite_interface.WSTRB.next = (
-                                write_data['current_transaction']['wr_strbs'])
+                            if use_WSTRB:
+                                internal_wstrb.next = (
+                                    write_data['current_transaction']['wr_strbs'])
                             write_data_state.next = t_write_state.SEND
                         else:
                             # Delay the transaction
@@ -344,8 +392,9 @@ class AxiLiteMasterBFM(object):
                         axi_lite_interface.WVALID.next = True
                         axi_lite_interface.WDATA.next = (
                             write_data['current_transaction']['wr_data'])
-                        axi_lite_interface.WSTRB.next = (
-                            write_data['current_transaction']['wr_strbs'])
+                        if use_WSTRB:
+                            internal_wstrb.next = (
+                                write_data['current_transaction']['wr_strbs'])
                         write_data_state.next = t_write_state.SEND
                     else:
                         # Delay the transaction
@@ -436,8 +485,9 @@ class AxiLiteMasterBFM(object):
                                 True)
                             axi_lite_interface.ARADDR.next = (
                                 read_data['current_transaction']['rd_addr'])
-                            axi_lite_interface.ARPROT.next = (
-                                read_data['current_transaction']['rd_prot'])
+                            if use_ARPROT:
+                                internal_arprot.next = (
+                                    read_data['current_transaction']['rd_prot'])
                             read_address_state.next = t_read_state.SEND
                         else:
                             # Delay the transaction
@@ -452,8 +502,9 @@ class AxiLiteMasterBFM(object):
                         axi_lite_interface.ARVALID.next = True
                         axi_lite_interface.ARADDR.next = (
                             read_data['current_transaction']['rd_addr'])
-                        axi_lite_interface.ARPROT.next = (
-                            read_data['current_transaction']['rd_prot'])
+                        if use_ARPROT:
+                            internal_arprot.next = (
+                                read_data['current_transaction']['rd_prot'])
                         read_address_state.next = t_read_state.SEND
                     else:
                         # Delay the transaction
@@ -510,4 +561,4 @@ class AxiLiteMasterBFM(object):
                         axi_lite_interface.RREADY.next = False
                         read_data_state.next = t_read_state.IDLE
 
-        return write, read
+        return write, read, optional_signal_assignments
