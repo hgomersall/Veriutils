@@ -337,7 +337,7 @@ class AxiLiteMasterBFM(object):
                                 'current_transaction']['address_delay'] -= 1
                             write_address_state.next = t_write_state.DELAY
 
-                if write_address_state == t_write_state.DELAY:
+                elif write_address_state == t_write_state.DELAY:
                     if write_data[
                         'current_transaction']['address_delay'] == 0:
                         # Commence the transaction. Set the address, valid and
@@ -355,7 +355,7 @@ class AxiLiteMasterBFM(object):
                         write_data[
                             'current_transaction']['address_delay'] -= 1
 
-                if write_address_state == t_write_state.SEND:
+                elif write_address_state == t_write_state.SEND:
                     if axi_lite_interface.AWREADY:
                         # Wait until handshake has completed and address has
                         # been received
@@ -385,7 +385,7 @@ class AxiLiteMasterBFM(object):
                                 'current_transaction']['data_delay'] -= 1
                             write_data_state.next = t_write_state.DELAY
 
-                if write_data_state == t_write_state.DELAY:
+                elif write_data_state == t_write_state.DELAY:
                     if write_data['current_transaction']['data_delay'] == 0:
                         # Commence the transaction. Set the data, valid and
                         # strobes.
@@ -401,7 +401,7 @@ class AxiLiteMasterBFM(object):
                         write_data[
                             'current_transaction']['data_delay'] -= 1
 
-                if write_data_state == t_write_state.SEND:
+                elif write_data_state == t_write_state.SEND:
                     if axi_lite_interface.WREADY:
                         # Wait until handshake has completed and data has been
                         # received
@@ -427,7 +427,7 @@ class AxiLiteMasterBFM(object):
                                     'response_ready_delay'] -= 1
                             write_response_state.next = t_write_state.DELAY
 
-                if write_response_state == t_write_state.DELAY:
+                elif write_response_state == t_write_state.DELAY:
                     if write_data[
                         'current_transaction']['response_ready_delay'] == 0:
                         # Set the ready flag high
@@ -439,7 +439,7 @@ class AxiLiteMasterBFM(object):
                             'current_transaction'][
                                 'response_ready_delay'] -= 1
 
-                if write_response_state == t_write_state.SEND:
+                elif write_response_state == t_write_state.SEND:
                     if axi_lite_interface.BVALID:
                         # Add the response to the write_response_queue
                         self.write_responses.put({'wr_resp': copy.copy(
