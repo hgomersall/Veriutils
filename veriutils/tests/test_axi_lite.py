@@ -89,7 +89,7 @@ class TestAxiLiteMasterBFM(TestCase):
         self.responses = [0, 2, 3]
 
         self.clock = Signal(bool(0))
-        self.reset = Signal(bool(0))
+        self.nreset = Signal(bool(1))
         self.axi_lite = AxiLiteMasterBFM()
         self.axi_lite_interface = AxiLiteInterface(
             self.data_width, self.addr_width)
@@ -99,7 +99,7 @@ class TestAxiLiteMasterBFM(TestCase):
 
     @block
     def SimpleAxiLiteWriteSlaveBFM(
-        self, clock, reset, axi_lite_interface, addr_high_prob=0.05,
+        self, clock, nreset, axi_lite_interface, addr_high_prob=0.05,
         addr_low_prob=0.2, data_high_prob=0.05, data_low_prob=0.2,
         resp_valid_prob=0.2):
 
@@ -110,8 +110,8 @@ class TestAxiLiteMasterBFM(TestCase):
         @always(clock.posedge)
         def write():
 
-            if reset:
-                # Axi reset so drive control signals low and return to idle.
+            if not nreset:
+                # Axi nreset so drive control signals low and return to idle.
                 axi_lite_interface.AWREADY.next = False
                 axi_lite_interface.WREADY.next = False
                 axi_lite_interface.BVALID.next = False
@@ -204,7 +204,7 @@ class TestAxiLiteMasterBFM(TestCase):
 
     @block
     def SimpleAxiLiteReadSlaveBFM(
-        self, clock, reset, axi_lite_interface, addr_high_prob=0.05,
+        self, clock, nreset, axi_lite_interface, addr_high_prob=0.05,
         addr_low_prob=0.1):
 
         t_read_state = enum('IDLE', 'RESPOND')
@@ -213,8 +213,8 @@ class TestAxiLiteMasterBFM(TestCase):
         @always(clock.posedge)
         def read():
 
-            if reset:
-                # Axi reset so drive control signals low and return to idle.
+            if not nreset:
+                # Axi nreset so drive control signals low and return to idle.
                 axi_lite_interface.ARREADY.next = False
                 axi_lite_interface.RVALID.next = False
                 read_state.next = t_read_state.IDLE
@@ -252,11 +252,11 @@ class TestAxiLiteMasterBFM(TestCase):
 
         return read
 
-    def test_reset(self):
-        ''' On reset the Master should drive ARVALID, AWVALID and WVALID low.
+    def test_nreset(self):
+        ''' On nreset the Master should drive ARVALID, AWVALID and WVALID low.
 
         It may only next drive the valid signals one rising edge after the
-        reset signal goes high.
+        nreset signal goes high.
 
         We do not care about the other signals.
         '''
@@ -266,14 +266,14 @@ class TestAxiLiteMasterBFM(TestCase):
         @block
         def testbench(clock):
             master_bfm = self.axi_lite.model(
-                clock, self.reset, self.axi_lite_interface)
+                clock, self.nreset, self.axi_lite_interface)
             slave_write_bfm = self.SimpleAxiLiteWriteSlaveBFM(
-                clock, self.reset, self.axi_lite_interface)
+                clock, self.nreset, self.axi_lite_interface)
             slave_read_bfm = self.SimpleAxiLiteReadSlaveBFM(
-                clock, self.reset, self.axi_lite_interface)
+                clock, self.nreset, self.axi_lite_interface)
 
-            reset_low_prob = 0.1
-            reset_high_prob = 0.05
+            nreset_high_prob = 0.1
+            nreset_low_prob = 0.05
             add_write_transaction_prob = 0.05
             add_read_transaction_prob = 0.05
 
@@ -283,10 +283,10 @@ class TestAxiLiteMasterBFM(TestCase):
             @always(clock.posedge)
             def check():
 
-                if not self.reset and (random.random() < reset_high_prob):
-                    self.reset.next = True
-                elif self.reset and (random.random() < reset_low_prob):
-                    self.reset.next = False
+                if not self.nreset and (random.random() < nreset_high_prob):
+                    self.nreset.next = True
+                elif self.nreset and (random.random() < nreset_low_prob):
+                    self.nreset.next = False
 
                 if random.random() < add_write_transaction_prob:
                     # At random times set up an axi lite write transaction
@@ -330,8 +330,8 @@ class TestAxiLiteMasterBFM(TestCase):
                     pass
 
                 if check_state == t_check_state.IDLE:
-                    if self.reset:
-                        # Reset has been received so move onto the check_reset
+                    if not self.nreset:
+                        # Reset has been received so move onto the check_nreset
                         # state.
                         check_state.next = t_check_state.CHECK_RESET
 
@@ -343,8 +343,8 @@ class TestAxiLiteMasterBFM(TestCase):
                     assert(
                         self.axi_lite_interface.WVALID==False)
 
-                    if not self.reset:
-                        # No longer being reset so return to IDLE
+                    if self.nreset:
+                        # No longer being nreset so return to IDLE
                         check_state.next = t_check_state.IDLE
 
             return check, master_bfm, slave_write_bfm, slave_read_bfm
@@ -363,11 +363,11 @@ class TestAxiLiteMasterBFM(TestCase):
         @block
         def testbench(clock):
             master_bfm = self.axi_lite.model(
-                clock, self.reset, self.axi_lite_interface)
+                clock, self.nreset, self.axi_lite_interface)
             slave_write_bfm = self.SimpleAxiLiteWriteSlaveBFM(
-                clock, self.reset, self.axi_lite_interface)
+                clock, self.nreset, self.axi_lite_interface)
             slave_read_bfm = self.SimpleAxiLiteReadSlaveBFM(
-                clock, self.reset, self.axi_lite_interface)
+                clock, self.nreset, self.axi_lite_interface)
 
             add_write_transaction_prob = 0.05
             add_read_transaction_prob = 0.05
@@ -474,11 +474,11 @@ class TestAxiLiteMasterBFM(TestCase):
         @block
         def testbench(clock):
             master_bfm = self.axi_lite.model(
-                clock, self.reset, self.axi_lite_interface)
+                clock, self.nreset, self.axi_lite_interface)
             slave_write_bfm = self.SimpleAxiLiteWriteSlaveBFM(
-                clock, self.reset, self.axi_lite_interface)
+                clock, self.nreset, self.axi_lite_interface)
             slave_read_bfm = self.SimpleAxiLiteReadSlaveBFM(
-                clock, self.reset, self.axi_lite_interface)
+                clock, self.nreset, self.axi_lite_interface)
 
             add_write_transaction_prob = 0.05
 
@@ -603,11 +603,11 @@ class TestAxiLiteMasterBFM(TestCase):
         @block
         def testbench(clock):
             master_bfm = self.axi_lite.model(
-                clock, self.reset, self.axi_lite_interface)
+                clock, self.nreset, self.axi_lite_interface)
             slave_write_bfm = self.SimpleAxiLiteWriteSlaveBFM(
-                clock, self.reset, self.axi_lite_interface)
+                clock, self.nreset, self.axi_lite_interface)
             slave_read_bfm = self.SimpleAxiLiteReadSlaveBFM(
-                clock, self.reset, self.axi_lite_interface)
+                clock, self.nreset, self.axi_lite_interface)
 
             add_read_transaction_prob = 0.05
 
