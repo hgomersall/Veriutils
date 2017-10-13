@@ -46,7 +46,7 @@ setup_args = {
             'Intended Audience :: Science/Research',
             'Topic :: Scientific/Engineering',
             ],
-        'packages':['veriutils'],
+        'packages':['veriutils', 'veriutils.tests'],
         'package_data': package_data,
   }
 
