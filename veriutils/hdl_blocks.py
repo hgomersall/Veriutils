@@ -54,8 +54,7 @@ def clock_source(clock, period):
     not_start_val = int(not clock.val)
 
     @instance
-    def _clockgen():
-
+    def clockgen():
 
         while True:
             yield(delay(even_period))
@@ -63,35 +62,35 @@ def clock_source(clock, period):
             yield(delay(odd_period))
             clock.next = not clock
 
-    clock_source.verilog_code = '''
-initial begin: CLOCK_SOURCE_CLOCKGEN
-    $clock <= %d;
-    while (1'b1) begin
-        # $even_period;
-        $clock <= (!$clock);
-        # $odd_period;
-        $clock <= (!$clock);
-    end
-end
-''' % (start_val,)
+#    clock_source.verilog_code = '''
+#initial begin: CLOCK_SOURCE_CLOCKGEN
+#    $clock <= %d;
+#    while (1'b1) begin
+#        # $even_period;
+#        $clock <= (!$clock);
+#        # $odd_period;
+#        $clock <= (!$clock);
+#    end
+#end
+#''' % (start_val,)
+#
+#    clock_source.vhdl_code = '''
+#CLOCK_SOURCE_CLOCKGEN: process is
+#begin
+#$clock <= '%d';
+#while True loop
+#    wait for $even_period ns;
+#    $clock <= not $clock;
+#    wait for $odd_period ns;
+#    $clock <= not $clock;
+#end loop;
+#wait;
+#end process CLOCK_SOURCE_CLOCKGEN;
+#''' % (start_val,)
+#
+#    clock.driven = 'reg'
 
-    clock_source.vhdl_code = '''
-CLOCK_SOURCE_CLOCKGEN: process is
-begin
-$clock <= '%d';
-while True loop
-    wait for $even_period ns;
-    $clock <= not $clock;
-    wait for $odd_period ns;
-    $clock <= not $clock;
-end loop;
-wait;
-end process CLOCK_SOURCE_CLOCKGEN;
-''' % (start_val,)
-
-    clock.driven = 'reg'
-
-    return _clockgen
+    return clockgen
 
 @block
 def init_reset_source(reset, clock, edge_sensitivity='posedge'):

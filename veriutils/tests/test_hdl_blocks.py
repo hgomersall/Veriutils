@@ -2,6 +2,7 @@
 from veriutils.tests.base_hdl_test import HDLTestCase, TestCase
 from veriutils import *
 from myhdl import *
+from myhdl import ToVerilogWarning, ToVHDLWarning
 import myhdl
 
 import copy
@@ -11,6 +12,7 @@ import tempfile
 import shutil
 from math import log
 
+import warnings
 import os
 
 
@@ -203,7 +205,13 @@ class TestClockSource(TestCase):
         tmp_dir = tempfile.mkdtemp()
 
         try:
-            test_block.convert(hdl='VHDL', path=tmp_dir)
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    'ignore',
+                    message='Output port is read internally: clock',
+                    category=ToVHDLWarning)
+
+                test_block.convert(hdl='VHDL', path=tmp_dir)
 
         finally:
             shutil.rmtree(tmp_dir)
@@ -233,8 +241,14 @@ class TestClockSource(TestCase):
         tmp_dir = tempfile.mkdtemp()
 
         try:
-            test_block.convert(hdl='Verilog', path=tmp_dir)
 
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    'ignore',
+                    message='Output port is read internally: clock',
+                    category=myhdl.ToVerilogWarning)
+
+                test_block.convert(hdl='Verilog', path=tmp_dir)
         finally:
             shutil.rmtree(tmp_dir)
 
