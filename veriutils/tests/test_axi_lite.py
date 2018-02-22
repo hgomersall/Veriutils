@@ -2,10 +2,33 @@ from unittest import TestCase
 from veriutils import *
 from myhdl import *
 
+from veriutils import axi_lite
+
 try:
     import Queue as queue
 except ImportError:
     import queue
+
+class TestAxiLiteReponses(TestCase):
+
+    def test_OKAY(self):
+        '''There should be an constant ``OKAY`` in the axi_lite namespace
+        corresponding to the OKAY response, 0b00.
+        '''
+        self.assertEqual(axi_lite.OKAY, 0b00)
+
+    def test_SLVERR(self):
+        '''There should be an constant ``SLVERR`` in the axi_lite namespace
+        corresponding to the SLVERR response, 0b10.
+        '''
+        self.assertEqual(axi_lite.SLVERR, 0b10)
+
+    def test_DECERR(self):
+        '''There should be an constant ``DECERR`` in the axi_lite namespace
+        corresponding to the DECERR response, 0b11.
+        '''
+        self.assertEqual(axi_lite.DECERR, 0b11)
+
 
 class TestAxiLiteInterface(TestCase):
     def test_AWPROT(self):

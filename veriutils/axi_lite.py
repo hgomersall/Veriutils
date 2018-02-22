@@ -29,6 +29,12 @@ def _randrange_exclude(start, stop, excluded_value):
     else:
         return test_val
 
+
+OKAY = 0b00
+# EXOKAY is not a valid axi-lite response
+SLVERR = 0b10
+DECERR = 0b11
+
 class AxiLiteInterface(object):
     '''The AXI lite interface definition
 
