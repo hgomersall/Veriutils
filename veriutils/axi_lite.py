@@ -6,6 +6,29 @@ try:
 except ImportError:
     from queue import Queue
 
+def _randrange_exclude(start, stop, excluded_value):
+    '''Works as randrange except it will never return excluded_value
+
+    WARNING: It might not be a uniform distribution in case that is important.
+    (it might be, but I've not done the maths to check).
+    '''
+    # Check it is possible!
+    if ((stop - start) == 1 and excluded_value == start):
+        raise ValueError('Empty range with the provided excluded value.')
+
+    test_val = random.randrange(start, stop)
+
+    if test_val == excluded_value:
+        if test_val + 1 < stop:
+            return test_val + 1
+
+        else:
+            # Wrap around
+            return start
+
+    else:
+        return test_val
+
 class AxiLiteInterface(object):
     '''The AXI lite interface definition
 
@@ -288,6 +311,42 @@ class AxiLiteMasterBFM(object):
         except AttributeError:
             use_WSTRB = False
 
+        max_awaddr = 2**len(axi_lite_interface.AWADDR)
+        max_wdata = 2**len(axi_lite_interface.WDATA)
+
+        max_awprot = 2**2
+        if use_WSTRB:
+            max_wstrb = 2**len(axi_lite_interface.WSTRB)
+
+        def write_addr_garbage():
+            # Write garbage to the address lines
+            correct_addr = (
+                write_data['current_transaction']['wr_addr'])
+
+            axi_lite_interface.AWADDR.next = (
+                _randrange_exclude(0, max_awaddr, correct_addr))
+
+            if use_AWPROT:
+                correct_awprot = (
+                    write_data['current_transaction']['wr_prot'])
+
+                internal_awprot.next = (
+                    _randrange_exclude(0, max_awprot, correct_awprot))
+
+        def write_data_garbage():
+            # Write garbage to the data lines
+            correct_data = (
+                write_data['current_transaction']['wr_data'])
+
+            axi_lite_interface.WDATA.next = (
+                _randrange_exclude(0, max_wdata, correct_data))
+
+            if use_WSTRB:
+                correct_wstrb = (
+                    write_data['current_transaction']['wr_strbs'])
+
+                internal_wstrb.next = (
+                    _randrange_exclude(0, max_wstrb, correct_wstrb))
 
         @always(clock.posedge)
         def write():
@@ -321,6 +380,7 @@ class AxiLiteMasterBFM(object):
                     if write_data['start_transaction']:
                         if write_data[
                             'current_transaction']['address_delay'] == 0:
+
                             # Commence the transaction. Set the address, valid
                             # and protections.
                             axi_lite_interface.AWVALID.next =(
@@ -336,6 +396,8 @@ class AxiLiteMasterBFM(object):
                             write_data[
                                 'current_transaction']['address_delay'] -= 1
                             write_address_state.next = t_write_state.DELAY
+
+                            write_addr_garbage()
 
                 elif write_address_state == t_write_state.DELAY:
                     if write_data[
@@ -355,6 +417,8 @@ class AxiLiteMasterBFM(object):
                         write_data[
                             'current_transaction']['address_delay'] -= 1
 
+                        write_addr_garbage()
+
                 elif write_address_state == t_write_state.SEND:
                     if axi_lite_interface.AWREADY:
                         # Wait until handshake has completed and address has
@@ -362,6 +426,9 @@ class AxiLiteMasterBFM(object):
                         axi_lite_interface.AWVALID.next = (
                             False)
                         write_address_state.next = t_write_state.IDLE
+
+                        write_addr_garbage()
+
 
                 # Data handshaking state machine
                 # ------------------------------
@@ -385,6 +452,8 @@ class AxiLiteMasterBFM(object):
                                 'current_transaction']['data_delay'] -= 1
                             write_data_state.next = t_write_state.DELAY
 
+                            write_data_garbage()
+
                 elif write_data_state == t_write_state.DELAY:
                     if write_data['current_transaction']['data_delay'] == 0:
                         # Commence the transaction. Set the data, valid and
@@ -401,6 +470,8 @@ class AxiLiteMasterBFM(object):
                         write_data[
                             'current_transaction']['data_delay'] -= 1
 
+                        write_data_garbage()
+
                 elif write_data_state == t_write_state.SEND:
                     if axi_lite_interface.WREADY:
                         # Wait until handshake has completed and data has been
@@ -408,6 +479,8 @@ class AxiLiteMasterBFM(object):
                         axi_lite_interface.WVALID.next = (
                             False)
                         write_data_state.next = t_write_state.IDLE
+
+                        write_data_garbage()
 
                 # Response handshaking state machine
                 # ----------------------------------

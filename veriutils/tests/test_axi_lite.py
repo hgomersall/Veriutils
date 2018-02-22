@@ -590,6 +590,210 @@ class TestAxiLiteMasterBFM(TestCase):
         myhdl_cosimulation(
             cycles, None, testbench, self.args, self.arg_types)
 
+    def test_write_signals_outside_of_transaction_values(self):
+        '''
+        After a transaction has been added to a master BFM and before the
+        transaction is complete, the following should be true:
+
+        Whilst an address transaction has not happened and AWVALID has not
+        been asserted, or after an address transaction has happened, the value
+        on AWADDR and AWPROT should be different to that expected during the
+        address transaction.
+
+        Whilst a data transaction has not happened and WVALID has not
+        been asserted, or after a data transaction has happened, the value on
+        WDATA and WSTRB should be different to that expected during the data
+        transaction.
+
+        Note: These are not required by the AXI-Lite spec, but are to help
+        prevent a class of bugs in which the data lines are read outside of
+        their respective transactions.
+        '''
+        cycles = 4000
+
+        @block
+        def testbench(clock):
+            master_bfm = self.axi_lite.model(
+                clock, self.nreset, self.axi_lite_interface)
+            slave_write_bfm = self.SimpleAxiLiteWriteSlaveBFM(
+                clock, self.nreset, self.axi_lite_interface)
+            slave_read_bfm = self.SimpleAxiLiteReadSlaveBFM(
+                clock, self.nreset, self.axi_lite_interface)
+
+            add_write_transaction_prob = 0.05
+
+            t_check_state = enum(
+                'IDLE', 'AWAITING_TRANSACTION_FIRST', 'AWAITING_TRANSACTION',
+                'ADDR_RECEIVED', 'DATA_RECEIVED', 'AWAITING_RESPONSE')
+
+            check_state = Signal(t_check_state.IDLE)
+
+            expected = {'addr': 0,
+                        'data': 0,
+                        'strbs': 0,
+                        'prot': 0,
+                        'resp': 0,}
+
+            @always(clock.posedge)
+            def check():
+
+                def check_address_sigs(
+                    awaiting_transaction=True, do_asserts=True):
+                    '''Check the signals are not what is expected unless
+                    the address transaction is happening.
+
+                    Return whether a transaction is happening.
+                    '''
+                    if (awaiting_transaction and
+                        self.axi_lite_interface.AWVALID and
+                        self.axi_lite_interface.AWREADY):
+
+                        return True
+
+                    elif (awaiting_transaction and
+                          self.axi_lite_interface.AWVALID):
+                        # AWVALID has gone high so the addr should be correct
+                        return False
+
+                    else:
+
+                        if do_asserts:
+                            assert(
+                                self.axi_lite_interface.AWADDR !=
+                                expected['addr'])
+
+                            assert(
+                                self.axi_lite_interface.AWPROT !=
+                                expected['prot'])
+
+                        return False
+
+                def check_data_sigs(
+                    awaiting_transaction=True, do_asserts=True):
+                    '''Check the signals are not what is expected unless
+                    the data transaction is happening.
+
+                    Return whether a transaction is happening.
+                    '''
+
+                    if (awaiting_transaction and
+                        self.axi_lite_interface.WVALID and
+                        self.axi_lite_interface.WREADY):
+
+                        return True
+
+                    elif (awaiting_transaction and
+                          self.axi_lite_interface.WVALID):
+                        # WVALID has gone high so the data should be correct
+                        return False
+                    else:
+
+                        if do_asserts:
+                            assert(
+                                self.axi_lite_interface.WDATA !=
+                                expected['data'])
+
+                            assert(
+                                self.axi_lite_interface.WSTRB !=
+                                expected['strbs'])
+
+                        return False
+
+                if check_state == t_check_state.IDLE:
+                    if random.random() < add_write_transaction_prob:
+                        # Create the random data that we will request from the
+                        # BFM.
+                        expected['addr'] = random.randint(
+                            0, 2**self.addr_width-1)
+                        expected['data'] = random.randint(
+                            0, 2**self.data_width-1)
+                        expected['strbs'] = random.randint(
+                            0, 2**self.wstrb_width-1)
+                        expected['prot'] = random.randint(0, 2**len(
+                            self.axi_lite_interface.AWPROT)-1)
+
+                        # Set up an axi lite write transaction
+                        self.axi_lite.add_write_transaction(
+                            write_address=expected['addr'],
+                            write_data=expected['data'],
+                            write_strobes=expected['strbs'],
+                            write_protection=expected['prot'],
+                            address_delay=random.randint(0, 15),
+                            data_delay=random.randint(0, 15),
+                            response_ready_delay=random.randint(10, 25))
+
+                        check_state.next = (
+                            t_check_state.AWAITING_TRANSACTION_FIRST)
+
+                elif check_state == t_check_state.AWAITING_TRANSACTION_FIRST:
+                    # In the first cycle, the set up hasn't happened yet so
+                    # we shouldn't check the value.
+                    addr_transaction_happened = (
+                        check_address_sigs(do_asserts=False))
+                    data_transaction_happened = (
+                        check_data_sigs(do_asserts=False))
+
+                    if (addr_transaction_happened and
+                        data_transaction_happened):
+
+                        check_state.next = t_check_state.AWAITING_RESPONSE
+
+                    elif addr_transaction_happened:
+                        check_state.next = t_check_state.ADDR_RECEIVED
+
+                    elif data_transaction_happened:
+                        check_state.next = t_check_state.DATA_RECEIVED
+
+                    else:
+                        check_state.next = t_check_state.AWAITING_TRANSACTION
+
+                elif check_state == t_check_state.AWAITING_TRANSACTION:
+
+                    addr_transaction_happened = check_address_sigs()
+                    data_transaction_happened = check_data_sigs()
+
+                    if (addr_transaction_happened and
+                        data_transaction_happened):
+
+                        check_state.next = t_check_state.AWAITING_RESPONSE
+
+                    elif addr_transaction_happened:
+                        check_state.next = t_check_state.ADDR_RECEIVED
+
+                    elif data_transaction_happened:
+                        check_state.next = t_check_state.DATA_RECEIVED
+
+                elif check_state == t_check_state.ADDR_RECEIVED:
+
+                    addr_transaction_happened = check_address_sigs(False)
+                    data_transaction_happened = check_data_sigs()
+
+                    if data_transaction_happened:
+                        check_state.next = t_check_state.AWAITING_RESPONSE
+
+                elif check_state == t_check_state.DATA_RECEIVED:
+                    addr_transaction_happened = check_address_sigs()
+                    data_transaction_happened = check_data_sigs(False)
+
+                    if addr_transaction_happened:
+                        check_state.next = t_check_state.AWAITING_RESPONSE
+
+                elif check_state == t_check_state.AWAITING_RESPONSE:
+
+                    check_address_sigs(False)
+                    check_data_sigs(False)
+
+                    if (self.axi_lite_interface.BVALID and
+                        self.axi_lite_interface.BREADY):
+                        check_state.next = t_check_state.IDLE
+                    else:
+                        pass
+
+            return check, master_bfm, slave_write_bfm, slave_read_bfm
+
+        myhdl_cosimulation(
+            cycles, None, testbench, self.args, self.arg_types)
+
     def test_data_read(self):
         ''' The master BFM should send the requested Address and Protections
         in the address transaction.
