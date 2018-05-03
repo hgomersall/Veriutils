@@ -1015,7 +1015,8 @@ class TestAxiStreamMasterBFM(TestCase):
     def test_reset(self):
         '''
         On receipt of a reset the axi_stream should cease sending the current
-        packet and remain idle until the next packet is added to the BFM.
+        packet, clear the backlog of packets and remain idle until the next
+        packet is added to the BFM.
         '''
 
         cycles = 4000
