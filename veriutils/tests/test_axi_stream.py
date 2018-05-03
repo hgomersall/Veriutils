@@ -1012,6 +1012,104 @@ class TestAxiStreamMasterBFM(TestCase):
 
             self.assertEqual(total_data_len, cycle_count[0])
 
+    def test_reset(self):
+        '''
+        On receipt of a reset the axi_stream should cease sending the current
+        packet and remain idle until the next packet is added to the BFM.
+        '''
+
+        cycles = 4000
+
+        @block
+        def testbench(clock):
+
+            reset = Signal(False)
+
+            bfm = self.stream.model(clock, self.interface, reset=reset)
+
+            t_stim_state = enum(
+                'INIT', 'SETUP_DATA', 'DELAY_AND_RESET', 'PROPAGATION_DELAY',
+                'CHECK')
+            stim_state = Signal(t_stim_state.INIT)
+
+            n_words = 100
+
+            inst_data = {
+                'delay_before_reset': random.randrange(1, n_words),
+                'delay_count': 0,
+                'data_count': 0,
+                'packet': [],
+                'packet_list': [],}
+
+            @always(clock.posedge)
+            def inst():
+                self.interface.TREADY.next = True
+
+                if stim_state == t_stim_state.INIT:
+                    # Check that the control signals are low
+                    self.assertFalse(self.interface.TVALID)
+                    self.assertFalse(self.interface.TLAST)
+
+                    if random.random() < 0.1:
+                        # Randomise the start of the test
+                        stim_state.next = t_stim_state.SETUP_DATA
+
+                elif stim_state == t_stim_state.SETUP_DATA:
+                    for n in range(n_words):
+                        # Generate a random packet with a length of n_words
+                        inst_data['packet'].append(random.randrange(
+                            0, 2**(8 * self.data_byte_width)))
+
+                    # Add the newly created packet to the packet list and add
+                    # it to the stream
+                    inst_data['packet_list'].append(inst_data['packet'])
+                    _add_packets_to_stream(
+                        self.stream, inst_data['packet_list'])
+
+                    # Set a random delay for the test to wait before sending
+                    # the reset
+                    inst_data['delay_before_reset'] = (
+                        random.randrange(1, n_words))
+                    stim_state.next = t_stim_state.DELAY_AND_RESET
+
+                elif stim_state == t_stim_state.DELAY_AND_RESET:
+                    if self.interface.TVALID:
+                        # Check that the system is sending the new packet.
+                        # This is necessary to make sure that the previous
+                        # reset removed the old packet.
+                        self.assertTrue(
+                            inst_data['packet'][inst_data['data_count']] ==
+                            self.interface.TDATA)
+
+                        if inst_data['delay_count'] == (
+                            inst_data['delay_before_reset']):
+                            # When the delay period has lapsed send the reset
+                            reset.next = True
+                            inst_data['delay_count'] = 0
+                            inst_data['data_count'] = 0
+                            stim_state.next = t_stim_state.PROPAGATION_DELAY
+                        else:
+                            inst_data['delay_count'] += 1
+                            inst_data['data_count'] += 1
+
+                elif stim_state == t_stim_state.PROPAGATION_DELAY:
+                    reset.next = False
+                    # Insert a one cycle delay to allow the reset to propagate
+                    stim_state.next = t_stim_state.CHECK
+
+                elif stim_state == t_stim_state.CHECK:
+                    # Reset the stim packets ready for the next run
+                    inst_data['packet'] = []
+                    inst_data['packet_list'] = []
+                    # Check that the control signals have been set low
+                    self.assertFalse(self.interface.TVALID)
+                    self.assertFalse(self.interface.TLAST)
+                    stim_state.next = t_stim_state.INIT
+
+            return inst, bfm
+
+        myhdl_cosimulation(
+            cycles, None, testbench, self.args, self.arg_types)
 
 #    def test_alternative_ID_and_destinations(self):
 #        '''It should be possible to set the ID and destination with the

@@ -152,7 +152,7 @@ class AxiStreamMasterBFM(object):
             self._TLASTs[(stream_ID, stream_destination)] = new_TLASTs
 
     @block
-    def model(self, clock, interface):
+    def model(self, clock, interface, reset=None):
 
         model_rundata = {}
         None_data = Signal(False)
@@ -176,69 +176,87 @@ class AxiStreamMasterBFM(object):
         else:
             internal_TLAST = Signal(False)
 
+        if reset is None:
+            reset = False
+
         @always(clock.posedge)
         def model_inst():
 
-            # We need to try to update either when a piece of data has been
-            # propagated (TVALID and TREADY) or when we previously didn't
-            # have any data, or the data was None (not TVALID)
-            if ((interface.TVALID and interface.TREADY) or
-                not interface.TVALID):
+            if reset:
+                self._data = {}
+                if 'packet' in model_rundata:
+                    del model_rundata['packet']
+                interface.TVALID.next = False
+                internal_TLAST.next = False
 
-                if 'packet' not in model_rundata:
-                    model_rundata['packet'] = []
-                    while len(model_rundata['packet']) == 0:
+            else:
+                # We need to try to update either when a piece of data has
+                # been propagated (TVALID and TREADY) or when we previously
+                # didn't have any data, or the data was None (not TVALID)
+                if ((interface.TVALID and interface.TREADY) or
+                    not interface.TVALID):
 
-                        try:
-                            if len(self._data[
-                                (stream_ID, stream_destination)]) > 0:
+                    if 'packet' not in model_rundata:
+                        model_rundata['packet'] = []
+                        while len(model_rundata['packet']) == 0:
 
-                                model_rundata['packet'] = self._data[
-                                    (stream_ID, stream_destination)].popleft()
-                                model_rundata['packet_TLAST'] = self._TLASTs[
-                                    (stream_ID, stream_destination)].popleft()
-                            else:
-                                # Nothing left to get, so we drop out.
+                            try:
+                                if len(self._data[
+                                    (stream_ID, stream_destination)]) > 0:
+
+                                    model_rundata['packet'] = self._data[
+                                        (stream_ID,
+                                         stream_destination)].popleft()
+                                    model_rundata['packet_TLAST'] = (
+                                        self._TLASTs[
+                                            (stream_ID,
+                                             stream_destination)].popleft())
+
+                                else:
+                                    # Nothing left to get, so we drop out.
+                                    break
+
+                            except KeyError:
                                 break
 
-                        except KeyError:
-                            break
+                    if len(model_rundata['packet']) > 0:
 
-                if len(model_rundata['packet']) > 0:
+                        if len(model_rundata['packet']) == 1:
 
-                    if len(model_rundata['packet']) == 1:
-
-                        internal_TLAST.next = model_rundata['packet_TLAST']
-                        value = model_rundata['packet'].popleft()
-
-                        # Nothing left in the packet
-                        del model_rundata['packet']
-
-                    else:
-                        value = model_rundata['packet'].popleft()
-
-                        # We need to set TLAST if all the remaining values
-                        # in the packet are None
-                        if all(
-                            [val is None for val in model_rundata['packet']]):
                             internal_TLAST.next = (
                                 model_rundata['packet_TLAST'])
+                            value = model_rundata['packet'].popleft()
+
+                            # Nothing left in the packet
+                            del model_rundata['packet']
+
                         else:
-                            internal_TLAST.next = False
+                            value = model_rundata['packet'].popleft()
 
-                    if value is not None:
-                        None_data.next = False
-                        interface.TDATA.next = value
-                        interface.TVALID.next = True
+                            # We need to set TLAST if all the remaining values
+                            # in the packet are None
+                            if all(
+                                [val is None for val in
+                                 model_rundata['packet']]):
+
+                                internal_TLAST.next = (
+                                    model_rundata['packet_TLAST'])
+                            else:
+                                internal_TLAST.next = False
+
+                        if value is not None:
+                            None_data.next = False
+                            interface.TDATA.next = value
+                            interface.TVALID.next = True
+                        else:
+                            None_data.next = True
+                            interface.TVALID.next = False
+
                     else:
-                        None_data.next = True
                         interface.TVALID.next = False
-
-                else:
-                    interface.TVALID.next = False
-                    # no data, so simply remove the packet for initialisation
-                    # next time
-                    del model_rundata['packet']
+                        # no data, so simply remove the packet for
+                        # initialisation next time
+                        del model_rundata['packet']
 
         return_instances.append(model_inst)
 
