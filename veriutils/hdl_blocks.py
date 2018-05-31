@@ -53,14 +53,18 @@ def clock_source(clock, period):
     start_val = int(clock.val)
     not_start_val = int(not clock.val)
 
+    clock_state = Signal(clock.val)
+
     @instance
     def clockgen():
 
         while True:
             yield(delay(even_period))
-            clock.next = not clock
+            clock.next = not clock_state
+            clock_state.next = not clock_state
             yield(delay(odd_period))
-            clock.next = not clock
+            clock.next = not clock_state
+            clock_state.next = not clock_state
 
 #    clock_source.verilog_code = '''
 #initial begin: CLOCK_SOURCE_CLOCKGEN

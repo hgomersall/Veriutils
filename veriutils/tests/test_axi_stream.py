@@ -588,7 +588,7 @@ class TestAxiStreamMasterBFM(TestCase):
 
             # A few test sanity checks.
             self.assertEqual(sum(len(packet) for packet in packet_list), 0)
-            self.assertTrue(cycle_count > total_data_len[0])
+            self.assertTrue(cycle_count[0] >= total_data_len[0])
 
         # A few explicit cases
         explicit_cases = (
@@ -674,7 +674,7 @@ class TestAxiStreamMasterBFM(TestCase):
 
             # A few test sanity checks.
             self.assertEqual(sum(len(packet) for packet in packet_list), 0)
-            self.assertTrue(cycle_count > total_data_len[0])
+            self.assertTrue(cycle_count[0] >= total_data_len[0])
 
         # A few explicit edge cases
         explicit_cases = (

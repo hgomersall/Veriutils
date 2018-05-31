@@ -2,7 +2,7 @@ from veriutils import SynchronousTest
 
 from .test_cosimulation import CosimulationTestMixin
 
-from tests.base_hdl_test import TestCase
+from .base_hdl_test import TestCase
 from myhdl import *
 
 import shutil

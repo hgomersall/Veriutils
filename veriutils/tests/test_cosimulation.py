@@ -1379,8 +1379,6 @@ class CosimulationTestMixin(object):
                 self.h = 'not a signal'
                 self.sig = Signal(intbv(0, min=min_val, max=max_val))
 
-                assert self.__dict__.keys()[0] != 'sig'
-
         @block
         def identity_factory(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
@@ -1451,8 +1449,6 @@ class CosimulationTestMixin(object):
             def __init__(self):
                 self.unused_sig = Signal(intbv(0)[10:])
                 self.sig = Signal(intbv(0, min=min_val, max=max_val))
-
-                assert self.__dict__.keys()[0] != 'sig'
 
         @block
         def identity_factory(test_input, test_output, reset, clock):

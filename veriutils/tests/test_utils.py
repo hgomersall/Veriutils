@@ -1,5 +1,5 @@
 
-from base_hdl_test import TestCase
+from .base_hdl_test import TestCase
 from myhdl import Signal, ResetSignal, intbv, enum, bin
 from veriutils import (
     check_intbv_signal, check_bool_signal, check_reset_signal,
