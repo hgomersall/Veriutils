@@ -585,7 +585,7 @@ def _signal_from_sigdict_and_name(sigdict, name):
 class SynchronousTest(object):
 
     def __init__(self, dut_factory, ref_factory, args, arg_types,
-                 period=PERIOD, custom_sources=None):
+                 period=None, custom_sources=None):
         '''Construct a synchronous test case for the pair of factories
         given by `dut_factory` and `ref_factory`. Each factory is constructed
         with the provided args (which probably corresponds to a signal list).
@@ -655,7 +655,10 @@ class SynchronousTest(object):
                            'custom', 'custom_reset', 'axi_stream_out',
                            'axi_stream_in', 'non-signal')
 
-        self.period = PERIOD
+        if period is None:
+            self.period = PERIOD
+        else:
+            self.period = period
 
         self.dut_factory = dut_factory
         self.ref_factory = ref_factory
@@ -1436,7 +1439,7 @@ class SynchronousTest(object):
         return instances
 
 def myhdl_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
-                       period=PERIOD, custom_sources=None, vcd_name=None):
+                       period=None, custom_sources=None, vcd_name=None):
     '''Run a cosimulation of a pair of MyHDL instances. This is a thin
     wrapper around a :class:`SynchronousTest` object, in which the object
     is created and then the cosimulate method is run, with the ``cycles``
