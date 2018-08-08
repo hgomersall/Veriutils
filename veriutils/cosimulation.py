@@ -978,7 +978,7 @@ class SynchronousTest(object):
 
         self._simulator_run = False
 
-    def cosimulate(self, cycles, vcd_name=None):
+    def cosimulate(self, cycles, vcd_name=None, timescale=None):
         '''Co-simulate the device under test and the reference design.
 
         Return a pair tuple of lists, each corresponding to the recorded
@@ -988,7 +988,10 @@ class SynchronousTest(object):
         if ``cycles`` is None, then the simulation continues until
         StopSimulation is raised.
 
-        If vcd_name is not None, a vcd file will be created of the
+        If vcd_name is not None, a vcd file will be created of the waveform.
+
+        If timescale is not None, the simulation will be run under the
+        timescale specified.
         '''
 
         # We initially need to clear all the signals to bring them to
@@ -1078,7 +1081,10 @@ class SynchronousTest(object):
         else:
             trace = False
 
-        top_level_block.config_sim(trace=trace)
+        if timescale is not None:
+            top_level_block.config_sim(trace=trace, timescale=timescale)
+        else:
+            top_level_block.config_sim(trace=trace)
 
         try:
             if cycles is not None:
@@ -1439,7 +1445,8 @@ class SynchronousTest(object):
         return instances
 
 def myhdl_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
-                       period=None, custom_sources=None, vcd_name=None):
+                       period=None, custom_sources=None, vcd_name=None,
+                       timescale=None):
     '''Run a cosimulation of a pair of MyHDL instances. This is a thin
     wrapper around a :class:`SynchronousTest` object, in which the object
     is created and then the cosimulate method is run, with the ``cycles``
@@ -1452,6 +1459,7 @@ def myhdl_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
     sim_object = SynchronousTest(dut_factory, ref_factory, args, arg_types,
                                  period, custom_sources)
 
-    return sim_object.cosimulate(cycles, vcd_name=vcd_name)
+    return sim_object.cosimulate(
+        cycles, vcd_name=vcd_name, timescale=timescale)
 
 
