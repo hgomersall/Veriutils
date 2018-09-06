@@ -106,8 +106,8 @@ class TestSignalCopy(TestCase):
                       (1, True, True),
                       (True, False, False))
 
-        for init, active, async in test_cases:
-            a = ResetSignal(0, active=False, async=False)
+        for init, active, isasync in test_cases:
+            a = ResetSignal(0, active=False, isasync=False)
             b = copy_signal(a)
             self.assertTrue(isinstance(b, ResetSignal))
             self.assertEqual(a, b)
@@ -117,7 +117,7 @@ class TestSignalCopy(TestCase):
                 self.assertIsNot(a.val, b.val)
 
             self.assertEqual(a.active, b.active)
-            self.assertEqual(a.async, b.async)
+            self.assertEqual(a.isasync, b.isasync)
 
 
 class TestClockSource(TestCase):
@@ -281,7 +281,7 @@ class TestInitResetSource(HDLTestCase):
         # even clock period
         self.clock_period = 10
 
-        self.reset_signal = ResetSignal(0, active=True, async=False)
+        self.reset_signal = ResetSignal(0, active=True, isasync=False)
 
         self.default_args = {
             'reset': self.reset_signal,
@@ -292,7 +292,7 @@ class TestInitResetSource(HDLTestCase):
         '''
         self.do_port_check_reset_test(init_reset_source, 'reset',
                                       self.reset_signal.active,
-                                      self.reset_signal.async)
+                                      self.reset_signal.isasync)
 
     def test_posedge_reset_sequence(self):
         '''The reset sequence should be three active cycles, then inactive.
@@ -310,7 +310,7 @@ class TestInitResetSource(HDLTestCase):
         for clock_start in (0, 1):
             clock = Signal(bool(clock_start))
 
-            dummy_reset = ResetSignal(intbv(0), active=1, async=False)
+            dummy_reset = ResetSignal(intbv(0), active=1, isasync=False)
             n_runs = 99
             clock_idx = [0]
 
@@ -364,7 +364,7 @@ class TestInitResetSource(HDLTestCase):
         for clock_start in (0, 1):
             clock = Signal(bool(clock_start))
 
-            dummy_reset = ResetSignal(intbv(0), active=1, async=False)
+            dummy_reset = ResetSignal(intbv(0), active=1, isasync=False)
             n_runs = 99
             clock_idx = [0]
 
@@ -479,7 +479,7 @@ class TestRandomSource(TestCase):
         assert self.clock.val == 1 # clock starts at 1
         assert self.clock_period % 2 == 0 # even period
 
-        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        reset_signal = ResetSignal(intbv(0), active=1, isasync=False)
         min_val = -1000
         max_val = 1024
 
@@ -536,7 +536,7 @@ class TestRandomSource(TestCase):
         assert self.clock.val == 1 # clock starts at 1
         assert self.clock_period % 2 == 0 # even period
 
-        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        reset_signal = ResetSignal(intbv(0), active=1, isasync=False)
         min_val = -1000
         max_val = 1024
 
@@ -590,7 +590,7 @@ class TestRandomSource(TestCase):
         '''The output should be repeatable despite other generators.
         '''
         test_signal = Signal(intbv(0, min=-1000, max=1024))
-        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        reset_signal = ResetSignal(intbv(0), active=1, isasync=False)
         min_val = test_signal.val.min
         max_val = test_signal.val.max
 
@@ -626,7 +626,7 @@ class TestRandomSource(TestCase):
         '''An invalid sensitivity should raise a ValueError.
         '''
         edge_sensitivity = 'foobar'
-        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        reset_signal = ResetSignal(intbv(0), active=1, isasync=False)
         test_signal = Signal(intbv(0, min=-100, max=100))
         self.assertRaisesRegex(ValueError, 'Invalid edge sensitivity',
                                random_source, test_signal, self.clock,
@@ -692,9 +692,9 @@ class TestRandomSource(TestCase):
 
             random.seed()
             dummy_reset_signal = ResetSignal(
-                intbv(0), active=1, async=False)
+                intbv(0), active=1, isasync=False)
 
-            reset_signal = ResetSignal(intbv(0), active=1, async=False)
+            reset_signal = ResetSignal(intbv(0), active=1, isasync=False)
 
             last_reset = [copy.copy(reset_signal.val)]
 
@@ -721,7 +721,7 @@ class TestRandomSource(TestCase):
         '''
 
         test_signal = Signal(intbv(0, min=-1000, max=1024))
-        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        reset_signal = ResetSignal(intbv(0), active=1, isasync=False)
         min_val = test_signal.val.min
         max_val = test_signal.val.max
 
@@ -749,7 +749,7 @@ class TestRandomSource(TestCase):
         '''
 
         test_signal = Signal(intbv(0, min=-1000, max=1024))
-        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        reset_signal = ResetSignal(intbv(0), active=1, isasync=False)
         min_val = test_signal.val.min
         max_val = test_signal.val.max
 
@@ -778,7 +778,7 @@ class TestRandomSource(TestCase):
         '''It should be possible to generate random boolean signals.
         '''
         test_signal = Signal(bool(0))
-        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        reset_signal = ResetSignal(intbv(0), active=1, isasync=False)
         min_val = 0
         max_val = 2
 
@@ -815,7 +815,7 @@ class TestRandomSource(TestCase):
         test_signal.next = 1
         test_signal._update()
 
-        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        reset_signal = ResetSignal(intbv(0), active=1, isasync=False)
         min_val = 0
         max_val = 2
 
@@ -847,7 +847,7 @@ class TestRandomSource(TestCase):
         enum_vals = enum(*enum_names)
 
         test_signal = Signal(enum_vals.a)
-        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        reset_signal = ResetSignal(intbv(0), active=1, isasync=False)
 
         seed = randrange(0, 0x5EEDF00D)
 
@@ -885,7 +885,7 @@ class TestRandomSource(TestCase):
         test_list.append('Not a signal')
         test_list[10] = ['also not a signal']
 
-        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        reset_signal = ResetSignal(intbv(0), active=1, isasync=False)
 
         # Set the initial seed
         seed = randrange(0, 0x5EEDF00D)
@@ -963,7 +963,7 @@ class TestRandomSource(TestCase):
                 self.another_attribute = 10
 
         test_signal = Interface()
-        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        reset_signal = ResetSignal(intbv(0), active=1, isasync=False)
 
         # Set the initial seed
         seed = randrange(0, 0x5EEDF00D)
@@ -1035,7 +1035,7 @@ class TestRandomSource(TestCase):
         '''Unsupported signals should fail
         '''
         test_signal = Signal('a string')
-        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        reset_signal = ResetSignal(intbv(0), active=1, isasync=False)
         seed = randrange(0, 0x5EEDF00D)
 
         self.assertRaisesRegex(ValueError, 'Invalid signal type',
@@ -1050,7 +1050,7 @@ class TestRecorderSink(TestCase):
     '''
     def setUp(self):
         self.clock = Signal(bool(1))
-        self.reset = ResetSignal(intbv(0), active=1, async=False)
+        self.reset = ResetSignal(intbv(0), active=1, isasync=False)
         self.clock_period = 10
 
     def tearDown(self):
@@ -1403,7 +1403,7 @@ class TestLutSignalDriver(TestCase):
         assert self.clock.val == 1 # clock starts at 1
         assert self.clock_period % 2 == 0 # even period
 
-        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        reset_signal = ResetSignal(intbv(0), active=1, isasync=False)
         min_val = -1000
         max_val = 1024
 
@@ -1464,7 +1464,7 @@ class TestLutSignalDriver(TestCase):
         assert self.clock.val == 1 # clock starts at 1
         assert self.clock_period % 2 == 0 # even period
 
-        reset_signal = ResetSignal(intbv(0), active=1, async=False)
+        reset_signal = ResetSignal(intbv(0), active=1, isasync=False)
         min_val = -1000
         max_val = 1024
 

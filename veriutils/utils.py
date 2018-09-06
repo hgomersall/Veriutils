@@ -120,14 +120,14 @@ def check_bool_signal(test_signal, name):
         raise ValueError ('Port %s signal: intbv signals should only be a '
                           'single bit.' % (name,))
 
-def check_reset_signal(test_signal, name, active, async):
+def check_reset_signal(test_signal, name, active, isasync):
 
     if not isinstance(test_signal, myhdl.ResetSignal):
         raise ValueError('Port %s should be a ResetSignal' % (name,))
 
-    if test_signal.async != async:
+    if test_signal.isasync != isasync:
         raise ValueError('Port %s reset signal should have the expected'
-                         ' async flag.' % (name,))
+                         ' isasync flag.' % (name,))
 
     if test_signal.active != active:
         raise ValueError('Port %s reset signal should have the expected'

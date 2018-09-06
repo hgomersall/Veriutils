@@ -29,7 +29,7 @@ class CosimulationTestMixin(object):
 
     def setUp(self):
         self.clock = Signal(bool(1))
-        self.reset = ResetSignal(bool(0), active=1, async=False)
+        self.reset = ResetSignal(bool(0), active=1, isasync=False)
         self.test_in = Signal(intbv(0)[10:])
         self.test_out = Signal(intbv(0)[16:])
 
@@ -118,7 +118,7 @@ class CosimulationTestMixin(object):
 
         class InterfaceWithReset(object):
             def __init__(self):
-                self.reset = ResetSignal(bool(0), active=1, async=False)
+                self.reset = ResetSignal(bool(0), active=1, isasync=False)
 
         args = self.default_args.copy()
         args['test_input'] = InterfaceWithReset()
@@ -209,7 +209,7 @@ class CosimulationTestMixin(object):
         @block
         def _custom_source(test_output, clock):
             counter = modbv(0, min=0, max=mod_max)
-            reset = ResetSignal(bool(0), active=1, async=False)
+            reset = ResetSignal(bool(0), active=1, isasync=False)
             @always_seq(clock.posedge, reset=reset)
             def custom():
                 counter[:] = counter + 1
@@ -243,7 +243,7 @@ class CosimulationTestMixin(object):
         @block
         def _custom_source(test_output, clock):
             counter = modbv(0, min=0, max=mod_max)
-            reset = ResetSignal(bool(0), active=1, async=False)
+            reset = ResetSignal(bool(0), active=1, isasync=False)
             @always_seq(clock.posedge, reset=reset)
             def custom():
                 counter[:] = counter + 1
@@ -281,7 +281,7 @@ class CosimulationTestMixin(object):
         test_input = []
         @block
         def _custom_reset_source(driven_reset, clock):
-            reset = ResetSignal(bool(0), active=1, async=False)
+            reset = ResetSignal(bool(0), active=1, isasync=False)
             @always_seq(clock.posedge, reset=reset)
             def custom():
                 next_reset = randrange(0, 2)
@@ -1769,7 +1769,7 @@ class CosimulationTestMixin(object):
                 # The attributes are sorted, so we need to run through
                 # them in the correct order. 'a', 'b', 'c', 'd' is fine.
                 self.a = Signal(intbv(0, min=min_val, max=max_val))
-                self.reset = ResetSignal(bool(0), active=1, async=False)
+                self.reset = ResetSignal(bool(0), active=1, isasync=False)
 
         @block
         def identity_factory(test_input, test_output, clock):
