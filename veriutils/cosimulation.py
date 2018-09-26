@@ -762,7 +762,7 @@ class SynchronousTest(object):
         else:
             # We need to create a reset to keep dependent HDL blocks happy
             # (though it won't be driven)
-            self.reset = ResetSignal(False, active=True, async=False)
+            self.reset = ResetSignal(False, active=True, isasync=False)
             self.init_reset_factory = ()
 
 

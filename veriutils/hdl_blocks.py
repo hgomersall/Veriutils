@@ -17,7 +17,7 @@ def copy_signal(signal_obj):
     if isinstance(signal_obj, ResetSignal):
         new_signal = ResetSignal(copy.copy(signal_obj._init),
                                  active=signal_obj.active,
-                                 async=signal_obj.async)
+                                 isasync=signal_obj.isasync)
 
         new_signal._val = copy.copy(signal_obj.val)
         return new_signal
@@ -99,7 +99,7 @@ def clock_source(clock, period):
 @block
 def init_reset_source(reset, clock, edge_sensitivity='posedge'):
 
-    check_reset_signal(reset, 'reset', async=reset.async,
+    check_reset_signal(reset, 'reset', isasync=reset.isasync,
                        active=reset.active)
 
     active_edges = 2
@@ -279,7 +279,7 @@ def recorder_sink(signal, clock, recorded_output_list,
         raise ValueError('Invalid edge sensitivity')
 
 
-    reset_signal = ResetSignal(bool(0), active=1, async=False)
+    reset_signal = ResetSignal(bool(0), active=1, isasync=False)
 
     if isinstance(signal, myhdl._Signal._Signal):
         @always_seq(edge, reset_signal)

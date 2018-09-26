@@ -406,26 +406,26 @@ class TestCheckResetSignal(TestCase):
             ValueError, 'Port %s should be a ResetSignal' % ('foo',),
             check_reset_signal, Signal(bool(0)), 'foo', False, False)
 
-    def test_async_correct(self):
-        '''For incorrect async flags, a ValueError should be raised.
+    def test_isasync_correct(self):
+        '''For incorrect isasync flags, a ValueError should be raised.
 
-        The async flag of the ResetSignal should agree with that passed to
+        The isasync flag of the ResetSignal should agree with that passed to
         the test function.
         '''
 
         name = 'foo'
-        for async in (True, False):
+        for isasync in (True, False):
 
-            test_signal = ResetSignal(0, active=True, async=async)
+            test_signal = ResetSignal(0, active=True, isasync=isasync)
 
             # Should pass fine
-            check_reset_signal(test_signal, name, async=async, active=True)
+            check_reset_signal(test_signal, name, isasync=isasync, active=True)
 
             self.assertRaisesRegex(
                 ValueError, 'Port %s reset signal should have the expected'
-                ' async flag.' % (name,),
+                ' isasync flag.' % (name,),
                 check_reset_signal, test_signal, name, active=True,
-                async=not async)
+                isasync=not isasync)
 
     def test_active_correct(self):
         '''For incorrect active flags, a ValueError should be raised.
@@ -437,16 +437,16 @@ class TestCheckResetSignal(TestCase):
         name = 'foo'
         for active in (True, False):
 
-            test_signal = ResetSignal(0, active=active, async=False)
+            test_signal = ResetSignal(0, active=active, isasync=False)
 
             # Should pass fine
-            check_reset_signal(test_signal, name, async=False, active=active)
+            check_reset_signal(test_signal, name, isasync=False, active=active)
 
             self.assertRaisesRegex(
                 ValueError, 'Port %s reset signal should have the expected'
                 ' active flag.' % (name,),
                 check_reset_signal, test_signal, name, active=not active,
-                async=False)
+                isasync=False)
 
 class TestSignedIntbvListToUnsigned(TestCase):
 
