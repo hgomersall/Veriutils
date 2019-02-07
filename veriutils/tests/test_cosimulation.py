@@ -1,14 +1,19 @@
 from veriutils.tests.base_hdl_test import HDLTestCase, TestCase
+from veriutils.hdl_blocks import copy_signal
 
-from veriutils import *
+from kea.axi import (
+    AxiStreamInterface, AxiStreamSlaveBFM, AxiStreamMasterBFM,
+    axi_stream_buffer, axi_master_playback)
 from myhdl import (intbv, modbv, enum, Signal, ResetSignal, instance,
                    delay, always, always_seq, Simulation, StopSimulation,
                    always_comb, block, BlockError)
 
 import unittest
 import copy
+import random
 from itertools import chain
 from random import randrange
+from collections import deque
 
 import os
 import tempfile
@@ -328,6 +333,10 @@ class CosimulationTestMixin(object):
         self.test_in = AxiStreamInterface()
         self.test_out = AxiStreamInterface()
 
+        # TID and TDEST are not used therefore the AxiSlaveBFM will interpret
+        # the stream as (0, 0)
+        stream = (0, 0)
+
         max_packet_length = 20
         max_new_packets = 50
         max_val = 2**(8 * self.test_out.bus_width)
@@ -340,10 +349,10 @@ class CosimulationTestMixin(object):
             else:
                 return val
 
-        packet_list = [
-            [val_gen() for m
-             in range(random.randrange(0, max_packet_length))] for n
-            in range(random.randrange(0, max_new_packets))]
+        packet_list = {stream: deque([
+            deque([val_gen() for m
+             in range(random.randrange(0, max_packet_length))]) for n
+            in range(random.randrange(0, max_new_packets))])}
 
         self.default_args = {'axi_interface_in': self.test_in,
                              'axi_interface_out': self.test_out,
@@ -370,20 +379,21 @@ class CosimulationTestMixin(object):
             return assign_signals
 
 
-        sim_cycles = sum(len(packet) for packet in packet_list) + 1
+        sim_cycles = sum(len(packet) for packet in packet_list[stream]) + 1
 
-        None_trimmed_packet_list = [
-            [val for val in packet if val is not None] for packet in
-            packet_list]
+        None_trimmed_packet_list = {stream: deque([
+            deque([val for val in packet if val is not None]) for packet in
+            packet_list[stream]])}
 
-        trimmed_packets = [
-            packet for packet in None_trimmed_packet_list if len(packet) > 0]
+        trimmed_packets = {stream: deque([
+            packet for packet in None_trimmed_packet_list[stream] if
+            len(packet) > 0])}
 
         master_bfm = AxiStreamMasterBFM()
         custom_sources = [(master_bfm.model, (self.clock, self.test_in), {})]
 
         # Calling several times should work just fine
-        master_bfm.add_data(packet_list)
+        master_bfm.add_data(packet_list[stream])
         dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, axi_identity, axi_identity,
             self.default_args, self.default_arg_types,
@@ -393,13 +403,13 @@ class CosimulationTestMixin(object):
             ref_results['axi_interface_out']['packets'], trimmed_packets)
 
         self.assertEqual(
-            ref_results['axi_interface_out']['incomplete_packet'], [])
+            ref_results['axi_interface_out']['incomplete_packet'], {})
 
         self.assertEqual(
             dut_results['axi_interface_out']['packets'], trimmed_packets)
 
         self.assertEqual(
-            dut_results['axi_interface_out']['incomplete_packet'], [])
+            dut_results['axi_interface_out']['incomplete_packet'], {})
 
     def test_axi_stream_out_with_incomplete_packet(self):
         '''It should be possible to use an ``axi_stream_out`` with an
@@ -409,6 +419,10 @@ class CosimulationTestMixin(object):
         self.clock = Signal(bool(1))
         self.test_in = AxiStreamInterface()
         self.test_out = AxiStreamInterface()
+
+        # TID and TDEST are not used therefore the AxiSlaveBFM will interpret
+        # the stream as (0, 0)
+        stream = (0, 0)
 
         max_packet_length = 10
         max_new_packets = 20
@@ -422,14 +436,14 @@ class CosimulationTestMixin(object):
             else:
                 return val
 
-        packet_list = [
-            [val_gen() for m
-             in range(random.randrange(3, max_packet_length))] for n
-            in range(random.randrange(3, max_new_packets))]
+        packet_list = {stream: deque([
+            deque([val_gen() for m
+             in range(random.randrange(3, max_packet_length))]) for n
+            in range(random.randrange(3, max_new_packets))])}
 
         # force the last packet to always have at least one value in
         # (otherwise the trimming below will break)
-        packet_list[-1][0] = random.randrange(0, max_val)
+        packet_list[stream][-1][0] = random.randrange(0, max_val)
 
         self.default_args = {'axi_interface_in': self.test_in,
                              'axi_interface_out': self.test_out,
@@ -456,38 +470,41 @@ class CosimulationTestMixin(object):
             return assign_signals
 
 
-        sim_cycles = sum(len(packet) for packet in packet_list) + 10
+        sim_cycles = sum(len(packet) for packet in packet_list[stream]) + 10
 
-        None_trimmed_packet_list = [
-            [val for val in packet if val is not None] for packet in
-            packet_list]
+        None_trimmed_packet_list = {stream: deque([
+            deque([val for val in packet if val is not None]) for packet in
+            packet_list[stream]])}
 
-        trimmed_packets = [
-            packet for packet in None_trimmed_packet_list if len(packet) > 0]
+        trimmed_packets = {stream: deque([
+            packet for packet in None_trimmed_packet_list[stream] if
+            len(packet) > 0])}
+
+        last_trimmed_packet = {stream: trimmed_packets[stream].pop()}
 
         master_bfm = AxiStreamMasterBFM()
         custom_sources = [(master_bfm.model, (self.clock, self.test_in), {})]
 
         # Calling several times should work just fine
-        master_bfm.add_data(packet_list, incomplete_last_packet=True)
+        master_bfm.add_data(packet_list[stream], incomplete_last_packet=True)
         dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, axi_identity, axi_identity,
             self.default_args, self.default_arg_types,
             custom_sources=custom_sources)
 
         self.assertEqual(
-            ref_results['axi_interface_out']['packets'], trimmed_packets[:-1])
+            ref_results['axi_interface_out']['packets'], trimmed_packets)
 
         self.assertEqual(
             ref_results['axi_interface_out']['incomplete_packet'],
-            trimmed_packets[-1])
+            last_trimmed_packet)
 
         self.assertEqual(
-            dut_results['axi_interface_out']['packets'], trimmed_packets[:-1])
+            dut_results['axi_interface_out']['packets'], trimmed_packets)
 
         self.assertEqual(
             dut_results['axi_interface_out']['incomplete_packet'],
-            trimmed_packets[-1])
+            last_trimmed_packet)
 
     def test_axi_stream_out_no_TLAST_argument(self):
         '''It should be possible to use an axi stream interface with no TLAST
@@ -496,6 +513,10 @@ class CosimulationTestMixin(object):
         self.clock = Signal(bool(1))
         self.test_in = AxiStreamInterface(use_TLAST=False)
         self.test_out = AxiStreamInterface(use_TLAST=False)
+
+        # TID and TDEST are not used therefore the AxiSlaveBFM will interpret
+        # the stream as (0, 0)
+        stream = (0, 0)
 
         max_packet_length = 20
         max_new_packets = 50
@@ -509,10 +530,10 @@ class CosimulationTestMixin(object):
             else:
                 return val
 
-        packet_list = [
-            [val_gen() for m
-             in range(random.randrange(0, max_packet_length))] for n
-            in range(random.randrange(0, max_new_packets))]
+        packet_list = {stream: deque([
+            deque([val_gen() for m
+             in range(random.randrange(0, max_packet_length))]) for n
+            in range(random.randrange(0, max_new_packets))])}
 
         self.default_args = {'axi_interface_in': self.test_in,
                              'axi_interface_out': self.test_out,
@@ -537,35 +558,37 @@ class CosimulationTestMixin(object):
             return assign_signals
 
 
-        sim_cycles = sum(len(packet) for packet in packet_list) + 1
+        sim_cycles = sum(len(packet) for packet in packet_list[stream]) + 1
 
-        None_trimmed_packet_list = [
-            [val for val in packet if val is not None] for packet in
-            packet_list]
+        None_trimmed_packet_list = {stream: deque([
+            deque([val for val in packet if val is not None]) for packet in
+            packet_list[stream]])}
 
-        trimmed_packets = [
-            packet for packet in None_trimmed_packet_list if len(packet) > 0]
+        trimmed_packets = {stream: deque([
+            packet for packet in None_trimmed_packet_list[stream] if
+            len(packet) > 0])}
 
         master_bfm = AxiStreamMasterBFM()
         custom_sources = [(master_bfm.model, (self.clock, self.test_in), {})]
 
         # Calling several times should work just fine
-        master_bfm.add_data(packet_list)
+        master_bfm.add_data(packet_list[stream])
         dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, axi_identity, axi_identity,
             self.default_args, self.default_arg_types,
             custom_sources=custom_sources)
 
-        all_data = [val for packet in trimmed_packets for val in packet]
+        all_data = {stream: deque(
+            [val for packet in trimmed_packets[stream]for val in packet])}
 
         self.assertEqual(
-            ref_results['axi_interface_out']['packets'], [])
+            ref_results['axi_interface_out']['packets'], {})
 
         self.assertEqual(
             ref_results['axi_interface_out']['incomplete_packet'], all_data)
 
         self.assertEqual(
-            dut_results['axi_interface_out']['packets'], [])
+            dut_results['axi_interface_out']['packets'], {})
 
         self.assertEqual(
             dut_results['axi_interface_out']['incomplete_packet'], all_data)
@@ -596,6 +619,10 @@ class CosimulationTestMixin(object):
         self.test_in = AxiStreamInterface()
         self.test_out = AxiStreamInterface()
 
+        # TID and TDEST are not used therefore the AxiSlaveBFM will interpret
+        # the stream as (0, 0)
+        stream = (0, 0)
+
         max_packet_length = 20
         max_new_packets = 50
         max_val = 2**(8 * self.test_out.bus_width) - 1
@@ -608,10 +635,10 @@ class CosimulationTestMixin(object):
             else:
                 return val
 
-        packet_list = [
-            [val_gen() for m
-             in range(random.randrange(3, max_packet_length))] for n
-            in range(random.randrange(3, max_new_packets))]
+        packet_list = {stream: deque([
+            deque([val_gen() for m
+             in range(random.randrange(3, max_packet_length))]) for n
+            in range(random.randrange(3, max_new_packets))])}
 
         self.default_args = {'axi_interface_in': self.test_in,
                              'axi_interface_out': self.test_out,
@@ -665,19 +692,21 @@ class CosimulationTestMixin(object):
              {'TREADY_probability': None})]
 
 
-        None_trimmed_packet_list = [
-            [val for val in packet if val is not None] for packet in
-            packet_list]
+        None_trimmed_packet_list = {stream: deque([
+            deque([val for val in packet if val is not None]) for packet in
+            packet_list[stream]])}
 
-        trimmed_packets = [
-            packet for packet in None_trimmed_packet_list if len(packet) > 0]
+        trimmed_packets = {stream: deque([
+            packet for packet in None_trimmed_packet_list[stream] if
+            len(packet) > 0])}
 
-        incremented_trimmed_packets = [
-            [val + 1 for val in packet] for packet in trimmed_packets]
+        incremented_trimmed_packets = {stream: deque([
+            deque([val + 1 for val in packet]) for packet in
+            trimmed_packets[stream]])}
 
-        sim_cycles = sum(len(packet) for packet in packet_list) + 3
+        sim_cycles = sum(len(packet) for packet in packet_list[stream]) + 3
 
-        master_bfm.add_data(packet_list)
+        master_bfm.add_data(packet_list[stream])
 
         dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, axi_offset_increment, axi_identity,
@@ -692,19 +721,22 @@ class CosimulationTestMixin(object):
             incremented_trimmed_packets)
 
         # Now check the invalids were set appropriately
-        flattened_packet_list = [
-            val for packet in packet_list for val in packet]
+        flattened_packet_list = {stream: deque([
+            val for packet in packet_list[stream] for val in packet])}
 
-        # We ignore the first 3 cycles in the dut results. This corresponds
+        # We ignore the first 4 cycles in the dut results. This corresponds
         # to the pipeline delay from turn on to visibility at the output
-        # for axi_offset_increment above.
+        # for axi_offset_increment above and the first few values in the
+        # signal_record to propagate through the playback block.
         dut_out_invalids = [
             each['TVALID'] for each in
             dut_results['axi_interface_out']['signals'][3:]]
 
         packet_invalids = [
-            False if val is None else True for val in flattened_packet_list]
+            False if val is None else True for val in
+            flattened_packet_list[stream]]
 
+        # Remove the last element to make the lists equal length
         self.assertEqual(dut_out_invalids, packet_invalids)
 
     def test_axi_stream_in_no_TLAST_argument(self):
@@ -720,6 +752,10 @@ class CosimulationTestMixin(object):
         max_new_packets = 50
         max_val = 2**(8 * self.test_out.bus_width) - 1
 
+        # TID and TDEST are not used therefore the AxiSlaveBFM will interpret
+        # the stream as (0, 0)
+        stream = (0, 0)
+
         def val_gen():
             # Generates Nones about half the time probability
             val = random.randrange(0, max_val*2)
@@ -728,10 +764,10 @@ class CosimulationTestMixin(object):
             else:
                 return val
 
-        packet_list = [
-            [val_gen() for m
-             in range(random.randrange(3, max_packet_length))] for n
-            in range(random.randrange(3, max_new_packets))]
+        packet_list = {stream: deque([
+            deque([val_gen() for m
+             in range(random.randrange(3, max_packet_length))]) for n
+            in range(random.randrange(3, max_new_packets))])}
 
         self.default_args = {'axi_interface_in': self.test_in,
                              'axi_interface_out': self.test_out,
@@ -778,42 +814,45 @@ class CosimulationTestMixin(object):
         custom_sources = [(master_bfm.model, (self.clock, self.test_in), {})]
 
 
-        None_trimmed_packet_list = [
-            [val for val in packet if val is not None] for packet in
-            packet_list]
+        None_trimmed_packet_list = {stream: deque([
+            deque([val for val in packet if val is not None]) for packet in
+            packet_list[stream]])}
 
-        trimmed_packets = [
-            packet for packet in None_trimmed_packet_list if len(packet) > 0]
+        trimmed_packets = {stream: deque([
+            packet for packet in None_trimmed_packet_list[stream] if
+            len(packet) > 0])}
 
-        incremented_trimmed_packets = [
-            [val + 1 for val in packet] for packet in trimmed_packets]
+        incremented_trimmed_packets = {stream: deque([
+            deque([val + 1 for val in packet]) for packet in
+            trimmed_packets[stream]])}
 
-        sim_cycles = sum(len(packet) for packet in packet_list) + 3
+        sim_cycles = sum(len(packet) for packet in packet_list[stream]) + 3
 
-        master_bfm.add_data(packet_list)
+        master_bfm.add_data(packet_list[stream])
 
         dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, axi_offset_increment, axi_identity,
             self.default_args, self.default_arg_types,
             custom_sources=custom_sources)
 
-        flattened_data = [val for packet in trimmed_packets for val in packet]
+        flattened_data = {stream: deque([
+            val for packet in trimmed_packets[stream] for val in packet])}
 
-        self.assertEqual(ref_results['axi_interface_out']['packets'], [])
+        self.assertEqual(ref_results['axi_interface_out']['packets'], {})
 
         self.assertEqual(
             ref_results['axi_interface_out']['incomplete_packet'],
             flattened_data)
 
-        flattened_incremented_data = [
-            val for packet in incremented_trimmed_packets for val in packet]
+        flattened_incremented_data = {stream: deque([
+            val for packet in incremented_trimmed_packets[stream] for val in
+            packet])}
 
-        self.assertEqual(dut_results['axi_interface_out']['packets'], [])
+        self.assertEqual(dut_results['axi_interface_out']['packets'], {})
 
         self.assertEqual(
             dut_results['axi_interface_out']['incomplete_packet'],
             flattened_incremented_data)
-
 
     def test_axi_stream_in_with_incomplete_packet(self):
         '''It should be possible for an axi_stream_in argument to handle
@@ -822,6 +861,10 @@ class CosimulationTestMixin(object):
         self.clock = Signal(bool(1))
         self.test_in = AxiStreamInterface()
         self.test_out = AxiStreamInterface()
+
+        # TID and TDEST are not used therefore the AxiSlaveBFM will interpret
+        # the stream as (0, 0)
+        stream = (0, 0)
 
         max_packet_length = 10
         max_new_packets = 20
@@ -835,14 +878,14 @@ class CosimulationTestMixin(object):
             else:
                 return val
 
-        packet_list = [
-            [val_gen() for m
-             in range(random.randrange(3, max_packet_length))] for n
-            in range(random.randrange(3, max_new_packets))]
+        packet_list = {stream: deque([
+            deque([val_gen() for m
+             in range(random.randrange(3, max_packet_length))]) for n
+            in range(random.randrange(3, max_new_packets))])}
 
         # force the last packet to always have at least one value in
         # (otherwise the trimming below will break)
-        packet_list[-1][0] = random.randrange(0, max_val)
+        packet_list[stream][-1][0] = random.randrange(0, max_val)
 
         self.default_args = {'axi_interface_in': self.test_in,
                              'axi_interface_out': self.test_out,
@@ -889,19 +932,28 @@ class CosimulationTestMixin(object):
         master_bfm = AxiStreamMasterBFM()
         custom_sources = [(master_bfm.model, (self.clock, self.test_in), {})]
 
-        None_trimmed_packet_list = [
-            [val for val in packet if val is not None] for packet in
-            packet_list]
+        None_trimmed_packet_list = {stream: deque([
+            deque([val for val in packet if val is not None]) for packet in
+            packet_list[stream]])}
 
-        trimmed_packets = [
-            packet for packet in None_trimmed_packet_list if len(packet) > 0]
+        trimmed_packets = {stream: deque([
+            packet for packet in None_trimmed_packet_list[stream] if
+            len(packet) > 0])}
 
-        incremented_trimmed_packets = [
-            [val + 1 for val in packet] for packet in trimmed_packets]
+        incremented_trimmed_packets = {stream: deque([
+            deque([val + 1 for val in packet]) for packet in
+            trimmed_packets[stream]])}
 
-        sim_cycles = sum(len(packet) for packet in packet_list) + 3
+        last_trimmed_packet = {}
+        last_trimmed_packet[stream] = trimmed_packets[stream].pop()
 
-        master_bfm.add_data(packet_list, incomplete_last_packet=True)
+        last_incremented_trimmed_packet = {}
+        last_incremented_trimmed_packet[stream] = (
+            incremented_trimmed_packets[stream].pop())
+
+        sim_cycles = sum(len(packet) for packet in packet_list[stream]) + 3
+
+        master_bfm.add_data(packet_list[stream], incomplete_last_packet=True)
 
         dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, axi_offset_increment, axi_identity,
@@ -909,19 +961,179 @@ class CosimulationTestMixin(object):
             custom_sources=custom_sources)
 
         self.assertEqual(
-            ref_results['axi_interface_out']['packets'], trimmed_packets[:-1])
+            ref_results['axi_interface_out']['packets'],
+            trimmed_packets)
 
         self.assertEqual(
             dut_results['axi_interface_out']['packets'],
-            incremented_trimmed_packets[:-1])
+            incremented_trimmed_packets)
 
         self.assertEqual(
             ref_results['axi_interface_out']['incomplete_packet'],
-            trimmed_packets[-1])
+            last_trimmed_packet)
 
         self.assertEqual(
             dut_results['axi_interface_out']['incomplete_packet'],
-            incremented_trimmed_packets[-1])
+            last_incremented_trimmed_packet)
+
+    def test_TID_and_TDEST(self):
+        ''' It should be possible for an axi_stream_in argument to handle
+        an interface with TID and TDEST.
+        '''
+
+        # It seems the way in which sensitivity of initial values is
+        # different between Verilog and VHDL. Assigning clock to '1' with
+        # verilog means the posedge clock sensitivity is triggered. This seems
+        # odd to me but is certainly true for at least the Vivado verilog
+        # simulator.
+        #
+        # Anyway, the upshot of this is we need to choose a start signal that
+        # means the result is the same for VHDL and Verilog, so clock should
+        # be initialised to 0.
+
+        self.clock = Signal(bool(0))
+
+        TID_width = 4
+        TDEST_width = 4
+
+        self.test_in = AxiStreamInterface(
+            TID_width=TID_width, TDEST_width=TDEST_width)
+        self.test_out = AxiStreamInterface(
+            TID_width=TID_width, TDEST_width=TDEST_width)
+
+        max_packet_length = 20
+        max_new_packets = 50
+        max_val = 2**(8 * self.test_out.bus_width) - 1
+
+        def val_gen():
+            # Generates Nones about half the time probability
+            val = random.randrange(0, max_val*2)
+            if val >= max_val:
+                return None
+            else:
+                return val
+
+        min_n_streams = 2
+        max_n_streams = 20
+        n_streams = random.randrange(min_n_streams, max_n_streams)
+
+        streams = set()
+
+        for n in range(n_streams):
+            stream = (
+                random.randrange(0, 2**TID_width),
+                random.randrange(0, 2**TDEST_width))
+
+            while stream in streams:
+                stream = (
+                    random.randrange(0, 2**TID_width),
+                    random.randrange(0, 2**TDEST_width))
+
+            streams.add(stream)
+
+        packet_list = {}
+
+        for stream in streams:
+            packet_list[stream] = deque([
+                deque([val_gen() for m
+                 in range(random.randrange(3, max_packet_length))]) for n
+                in range(random.randrange(3, max_new_packets))])
+
+        self.default_args = {'axi_interface_in': self.test_in,
+                             'axi_interface_out': self.test_out,
+                             'clock': self.clock}
+
+        self.default_arg_types = {'axi_interface_in': 'axi_stream_in',
+                                  'axi_interface_out': 'axi_stream_out',
+                                  'clock': 'clock'}
+
+        axi_output_monitor = AxiStreamSlaveBFM()
+
+        @block
+        def axi_identity(clock, axi_interface_in, axi_interface_out):
+
+            @always_comb
+            def assign_signals():
+                axi_interface_in.TREADY.next = axi_interface_out.TREADY
+                axi_interface_out.TVALID.next = axi_interface_in.TVALID
+                axi_interface_out.TID.next = axi_interface_in.TID
+                axi_interface_out.TDEST.next = axi_interface_in.TDEST
+                axi_interface_out.TLAST.next = axi_interface_in.TLAST
+                axi_interface_out.TDATA.next = axi_interface_in.TDATA
+
+            return assign_signals
+
+        # A test dut block that munges the signal and delays it by a cycle
+        @block
+        def axi_offset_increment(clock, axi_interface_in, axi_interface_out):
+
+            internal_TVALID = Signal(False)
+            internal_TDATA = Signal(intbv(0)[len(axi_interface_in.TDATA):])
+            internal_TID = Signal(intbv(0)[len(axi_interface_in.TID):])
+            internal_TDEST = Signal(intbv(0)[len(axi_interface_in.TDEST):])
+            internal_TLAST = Signal(False)
+
+            # This works because axi_interface_out.TREADY is always True.
+            @always(clock.posedge)
+            def assign_signals():
+
+                internal_TVALID.next = axi_interface_in.TVALID
+                internal_TDATA.next = axi_interface_in.TDATA
+                internal_TLAST.next = axi_interface_in.TLAST
+                internal_TID.next = axi_interface_in.TID
+                internal_TDEST.next = axi_interface_in.TDEST
+
+                axi_interface_in.TREADY.next = True
+                axi_interface_out.TVALID.next = internal_TVALID
+                axi_interface_out.TID.next = internal_TID
+                axi_interface_out.TDEST.next = internal_TDEST
+                axi_interface_out.TLAST.next = internal_TLAST
+                axi_interface_out.TDATA.next = internal_TDATA + 1
+
+            return assign_signals
+
+        master_bfm = AxiStreamMasterBFM()
+        custom_sources = [
+            (master_bfm.model, (self.clock, self.test_in), {}),
+            (axi_output_monitor.model, (self.clock, self.test_out),
+             {'TREADY_probability': None})]
+
+        None_trimmed_packet_list = {}
+        trimmed_packets = {}
+        incremented_trimmed_packets = {}
+        sim_cycles = 0
+
+        for stream in packet_list.keys():
+            None_trimmed_packet_list[stream] = deque([
+                deque([val for val in packet if val is not None]) for packet
+                in packet_list[stream]])
+
+            sim_cycles = sim_cycles + sum(
+                len(packet) for packet in packet_list[stream]) + 3
+
+        for stream in None_trimmed_packet_list.keys():
+            trimmed_packets[stream] = deque([
+                packet for packet in None_trimmed_packet_list[stream] if
+                len(packet) > 0])
+
+        for stream in trimmed_packets.keys():
+            incremented_trimmed_packets[stream] = deque([
+                deque([val + 1 for val in packet]) for packet in
+                trimmed_packets[stream]])
+
+        master_bfm.add_multi_stream_data(packet_list)
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, axi_offset_increment, axi_identity,
+            self.default_args, self.default_arg_types,
+            custom_sources=custom_sources)
+
+        self.assertEqual(
+            ref_results['axi_interface_out']['packets'], trimmed_packets)
+
+        self.assertEqual(
+            dut_results['axi_interface_out']['packets'],
+            incremented_trimmed_packets)
 
     def test_all_argument_types_and_args_have_same_keys(self):
         '''The arg dict should have the same keys as the arg types dict
@@ -1968,6 +2180,10 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         self.test_in = AxiStreamInterface()
         self.test_out = AxiStreamInterface()
 
+        # TID and TDEST are not used therefore the AxiSlaveBFM will interpret
+        # the stream as (0, 0)
+        stream = (0, 0)
+
         max_packet_length = 20
         max_new_packets = 50
         max_val = 2**(8 * self.test_out.bus_width) - 1
@@ -1980,10 +2196,10 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
             else:
                 return val
 
-        packet_list = [
-            [val_gen() for m
-             in range(random.randrange(3, max_packet_length))] for n
-            in range(random.randrange(3, max_new_packets))]
+        packet_list = {stream: deque([
+            deque([val_gen() for m
+             in range(random.randrange(3, max_packet_length))]) for n
+            in range(random.randrange(3, max_new_packets))])}
 
         self.default_args = {'axi_interface_in': self.test_in,
                              'axi_interface_out': self.test_out,
@@ -2008,24 +2224,26 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
         master_bfm = AxiStreamMasterBFM()
         custom_sources = [(master_bfm.model, (self.clock, self.test_in), {})]
 
-        None_trimmed_packet_list = [
-            [val for val in packet if val is not None] for packet in
-            packet_list]
+        None_trimmed_packet_list = {stream: deque([
+            deque([val for val in packet if val is not None]) for packet in
+            packet_list[stream]])}
 
-        trimmed_packets = [
-            packet for packet in None_trimmed_packet_list if len(packet) > 0]
+        trimmed_packets = {stream: deque([
+            packet for packet in None_trimmed_packet_list[stream] if
+            len(packet) > 0])}
 
-        incremented_trimmed_packets = [
-            [val + 1 for val in packet] for packet in trimmed_packets]
+        incremented_trimmed_packets = {stream: deque([
+            deque([val + 1 for val in packet]) for packet in
+            trimmed_packets[stream]])}
 
-        sim_cycles = sum(len(packet) for packet in packet_list) + 1
+        sim_cycles = sum(len(packet) for packet in packet_list[stream]) + 1
 
         test_obj = SynchronousTest(axi_identity, axi_identity,
                                    self.default_args, self.default_arg_types,
                                    custom_sources=custom_sources)
 
         for n in range(3):
-            master_bfm.add_data(packet_list)
+            master_bfm.add_data(packet_list[stream])
 
             dut_results, ref_results = test_obj.cosimulate(sim_cycles)
 
