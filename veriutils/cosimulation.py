@@ -1,5 +1,5 @@
 from .hdl_blocks import *
-from .axi import AxiStreamSlaveBFM, axi_stream_buffer, axi_master_playback
+from kea.axi import AxiStreamSlaveBFM, axi_stream_buffer, axi_master_playback
 
 from myhdl import *
 
@@ -232,7 +232,7 @@ def axi_stream_file_writer(
         'signal_TREADY', axi_stream_interface.TREADY)
     axi_stream_interface.TREADY.driven = 'reg'
 
-    signal_names = ('TDATA', 'TLAST', 'TKEEP', 'TSTRB')
+    signal_names = ('TDATA', 'TLAST', 'TKEEP', 'TSTRB', 'TID', 'TDEST')
 
     for each_signal_name in signal_names:
         try:
@@ -1118,7 +1118,7 @@ class SynchronousTest(object):
             self.outputs[1][each_axi_interface] = {
                 'signals': ref_axi_signals,
                 'packets': ref_bfm.completed_packets,
-                'incomplete_packet': ref_bfm.current_packet}
+                'incomplete_packet': ref_bfm.current_packets}
 
             if self.axi_stream_out_dut_bfms is not None:
                 dut_axi_signals = axi_interface_from_name(
@@ -1128,7 +1128,7 @@ class SynchronousTest(object):
                 self.outputs[0][each_axi_interface] = {
                     'signals': dut_axi_signals,
                     'packets': dut_bfm.completed_packets,
-                    'incomplete_packet': dut_bfm.current_packet}
+                    'incomplete_packet': dut_bfm.current_packets}
 
         return self.outputs
 
@@ -1383,16 +1383,10 @@ class SynchronousTest(object):
             axi_bfm = self.axi_stream_in_ref_bfms[axi_interface_name]
             axi_interface = self.axi_stream_in_ref_interfaces[
                 axi_interface_name]
-            packets = axi_bfm.completed_packets_with_validity
+            signal_record = axi_bfm.signal_record
 
-            if len(axi_bfm.current_packet) > 0:
-                packets.append(axi_bfm.current_packet_with_validity)
-                instances.append(
-                    axi_master_playback(clock, axi_interface, packets,
-                                        incomplete_last_packet=True))
-            else:
-                instances.append(
-                    axi_master_playback(clock, axi_interface, packets))
+            instances.append(
+                axi_master_playback(clock, axi_interface, signal_record))
 
         # Now set up the AXI stream file writers. There is one file per axi
         # writer.
