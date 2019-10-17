@@ -371,11 +371,16 @@ def _expand_to_signal_list(signal_obj, depth=0):
         # recursion limit
         return [], []
 
+
     if isinstance(signal_obj, myhdl._Signal._Signal):
         return [signal_obj], []
 
     elif isinstance(signal_obj, list):
-        #already a list
+        # Already a list. Check it's a list of signals.
+        for each in signal_obj:
+            if not isinstance(signal_obj, myhdl._Signal._Signal):
+                return [], []
+
         return signal_obj, []
 
     else:
@@ -480,7 +485,6 @@ def _create_flattened_args(args, arg_types):
     lookup_type = {}
     signal_object_lookup = {}
     for each_arg_name in arg_list:
-
         if arg_types[each_arg_name] == 'non-signal':
             non_signal_list.append(each_arg_name)
             continue
