@@ -15,10 +15,16 @@ import re
 from string import Template
 import csv
 
-import collections
 import random
 
 import inspect
+
+try:
+    # Python 3
+    from collections.abc import Mapping
+except ImportError:
+    # Python 2.7
+    from collections import Mapping
 
 import sys
 PY3 = sys.version_info[0]
@@ -377,9 +383,13 @@ def _expand_to_signal_list(signal_obj, depth=0):
 
     elif isinstance(signal_obj, list):
         # Already a list. Check it's a list of signals.
+        all_non_signals = True
         for each in signal_obj:
-            if not isinstance(signal_obj, myhdl._Signal._Signal):
-                return [], []
+            if isinstance(each, myhdl._Signal._Signal):
+                all_non_signals = False
+
+        if all_non_signals:
+            return [], []
 
         return signal_obj, []
 
@@ -678,7 +688,7 @@ class SynchronousTest(object):
 
         def _arg_checker(signal_collection, types, name_prefix='', depth=0):
 
-            if not isinstance(signal_collection, collections.Mapping):
+            if not isinstance(signal_collection, Mapping):
                 # Use the __dict__ attribute of the object
                 signal_objs = signal_collection.__dict__
             else:
