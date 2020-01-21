@@ -2156,76 +2156,76 @@ class CosimulationTestMixin(object):
             self.assertTrue(len(ref_results[signal]) == 20)
             self.assertEqual(dut_results[signal], ref_results[signal])
 
-#    def test_list_of_non_signals_on_interface(self):
-#        ''' If should be possible to have a list of non-signals set as an
-#        attribute on an interface.
-#        '''
-#
-#        class ExampleInterface(object):
-#            ''' An example interface with a list of non signals
-#            '''
-#            def __init__(self):
-#
-#                self.signals = ['a', 'b']
-#
-#                self.foo = Signal(False)
-#                self.bar = Signal(False)
-#
-#        @block
-#        def example_dut(clock, example_interface):
-#            # A simple example dut that uses the ExampleInterface
-#            @always(clock.posedge)
-#            def example():
-#                example_interface.foo.next = example_interface.bar
-#
-#            return example
-#
-#        @block
-#        def test(clock, example_interface):
-#            # A simple test that drives the signals
-#
-#            bar_reg = Signal(False)
-#
-#            @always(clock.posedge)
-#            def stim():
-#                example_interface.bar.next = True
-#
-#                bar_reg.next = example_interface.bar
-#
-#                # Simple check to make sure something is happening
-#                assert(bar_reg == example_interface.foo)
-#
-#            return stim
-#
-#        # Create the example interface
-#        example_interface = ExampleInterface()
-#
-#        # Add the example interface to the args
-#        args = {
-#            'clock': self.default_args['clock'],
-#            'example_interface': example_interface,
-#        }
-#
-#        # Define the signal types of the signals on the example interface. The
-#        # type of the list of non-signals is not defined
-#        example_interface_types = {
-#            'foo': 'output',
-#            'bar': 'custom',
-#        }
-#
-#        arg_types = {
-#            'clock': self.default_arg_types['clock'],
-#            'example_interface': example_interface_types,
-#        }
-#
-#        sim_cycles = 10
-#
-#        dut_results, ref_results = self.construct_and_simulate(
-#            sim_cycles, example_dut, example_dut, args, arg_types,
-#            custom_sources=[(test, (), args)])
-#
-#        for signal in dut_results:
-#            self.assertEqual(dut_results[signal], ref_results[signal])
+    def test_list_of_non_signals_on_interface(self):
+        ''' If should be possible to have a list of non-signals set as an
+        attribute on an interface.
+        '''
+
+        class ExampleInterface(object):
+            ''' An example interface with a list of non signals
+            '''
+            def __init__(self):
+
+                self.signals = ['a', 'b']
+
+                self.foo = Signal(False)
+                self.bar = Signal(False)
+
+        @block
+        def example_dut(clock, example_interface):
+            # A simple example dut that uses the ExampleInterface
+            @always(clock.posedge)
+            def example():
+                example_interface.foo.next = example_interface.bar
+
+            return example
+
+        @block
+        def test(clock, example_interface):
+            # A simple test that drives the signals
+
+            bar_reg = Signal(False)
+
+            @always(clock.posedge)
+            def stim():
+                example_interface.bar.next = True
+
+                bar_reg.next = example_interface.bar
+
+                # Simple check to make sure something is happening
+                assert(bar_reg == example_interface.foo)
+
+            return stim
+
+        # Create the example interface
+        example_interface = ExampleInterface()
+
+        # Add the example interface to the args
+        args = {
+            'clock': self.default_args['clock'],
+            'example_interface': example_interface,
+        }
+
+        # Define the signal types of the signals on the example interface. The
+        # type of the list of non-signals is not defined
+        example_interface_types = {
+            'foo': 'output',
+            'bar': 'custom',
+        }
+
+        arg_types = {
+            'clock': self.default_arg_types['clock'],
+            'example_interface': example_interface_types,
+        }
+
+        sim_cycles = 10
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, example_dut, example_dut, args, arg_types,
+            custom_sources=[(test, (), args)])
+
+        for signal in dut_results:
+            self.assertEqual(dut_results[signal], ref_results[signal])
 
 class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
     '''The SynchronousTest class should provide the core of the cosimulation.
