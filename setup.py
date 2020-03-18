@@ -20,7 +20,7 @@
 
 from setuptools import setup
 
-version = '0.4'
+version = '0.9'
 
 package_data = {}
 
