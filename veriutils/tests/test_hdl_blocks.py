@@ -1043,6 +1043,162 @@ class TestRandomSource(TestCase):
                                reset_signal, seed)
 
 
+class TestHandlerSink(TestCase):
+    '''There should be a block that calls a signal handler on every cycle
+    '''
+    def setUp(self):
+        self.clock = Signal(bool(1))
+        self.reset = ResetSignal(intbv(0), active=1, isasync=False)
+        self.clock_period = 10
+
+        self.recorded_output = []
+        self.handler = lambda val: self.recorded_output.append(val)
+
+    def tearDown(self):
+        random.seed(None)
+
+    def test_correct_intbv_handling(self):
+        '''It should handle intbv Signals.
+        '''
+
+        min_val = -999
+        max_val = 999
+
+        test_signal = Signal(intbv(0, min=min_val, max=max_val))
+        test_output = []
+
+        @block
+        def top():
+            @always_seq(self.clock.posedge, reset=self.reset)
+            def test_recorder():
+                test_output.append(int(test_signal.val))
+
+            source = random_source(test_signal, self.clock, self.reset)
+            sink = handler_sink(
+                test_signal, self.clock, self.handler)
+            clockgen = clock_source(self.clock, self.clock_period)
+
+            return clockgen, source, sink, test_recorder
+
+        top_level_block = top()
+        top_level_block.run_sim(duration=30*self.clock_period, quiet=1)
+        top_level_block.quit_sim()
+
+        self.assertEqual(test_output, self.recorded_output)
+
+    def test_correct_bool_recording(self):
+        '''It should handle bool Signals.
+        '''
+        min_val = 0
+        max_val = 2
+
+        test_signal = Signal(bool(0))
+        test_output = []
+
+        @block
+        def top():
+            @always_seq(self.clock.posedge, reset=self.reset)
+            def test_recorder():
+                test_output.append(bool(test_signal.val))
+
+            source = random_source(test_signal, self.clock, self.reset)
+            sink = handler_sink(test_signal, self.clock, self.handler)
+            clockgen = clock_source(self.clock, self.clock_period)
+
+            return source, sink, clockgen, test_recorder
+
+        top_level_block = top()
+        top_level_block.run_sim(duration=30*self.clock_period, quiet=1)
+        top_level_block.quit_sim()
+
+        self.assertEqual(test_output, self.recorded_output)
+
+    def test_correct_enum_recording(self):
+        '''It should handle enum Signals.
+        '''
+        enum_names = ('a', 'b', 'c', 'd', 'e')
+        enum_vals = enum(*enum_names)
+
+        test_signal = Signal(enum_vals.a)
+        test_output = []
+
+        @block
+        def top():
+            @always_seq(self.clock.posedge, reset=self.reset)
+            def test_recorder():
+                test_output.append(test_signal.val)
+
+            source = random_source(test_signal, self.clock, self.reset)
+            sink = handler_sink(test_signal, self.clock, self.handler)
+            clockgen = clock_source(self.clock, self.clock_period)
+
+            return source, sink, clockgen, test_recorder
+
+        top_level_block = top()
+        top_level_block.run_sim(duration=30*self.clock_period, quiet=1)
+        top_level_block.quit_sim()
+
+        self.assertEqual(test_output, self.recorded_output)
+
+    def test_edge_sensitivity(self):
+        '''It should be possible to set a clock edge sensitivity.
+        '''
+
+        # Check we have what we think we have
+        assert self.clock.val == 1 # clock starts at 1
+        assert self.clock_period % 2 == 0 # even period
+
+        min_val = -999
+        max_val = 999
+
+        test_signal = Signal(intbv(0, min=min_val, max=max_val))
+        neg_edge_output = []
+        pos_edge_output = []
+
+        neg_edge_handler = lambda val: neg_edge_output.append(val)
+        pos_edge_handler = lambda val: pos_edge_output.append(val)
+
+        @block
+        def top():
+            # We require a negative edge source
+            source = random_source(test_signal, self.clock, self.reset,
+                                   edge_sensitivity='negedge')
+
+            neg_edge_sink = handler_sink(
+                test_signal, self.clock, neg_edge_handler,
+                edge_sensitivity='negedge')
+            pos_edge_sink = handler_sink(
+                test_signal, self.clock, pos_edge_handler,
+                edge_sensitivity='posedge')
+            clockgen = clock_source(self.clock, self.clock_period)
+
+            return clockgen, source, pos_edge_sink, neg_edge_sink
+
+        top_level_block = top()
+        top_level_block.run_sim(duration=30*self.clock_period, quiet=1)
+        top_level_block.quit_sim()
+
+        assert len(neg_edge_output) == len(pos_edge_output)
+        # Now we need to offset the results of the positive edge
+        # with respect to the negative edge. This is dictated by the starting
+        # conditions. This can be confirmed with a timing diagram.
+        self.assertEqual(neg_edge_output[1:], pos_edge_output[:-1])
+
+    def test_invalid_edge_arg_raises(self):
+        '''An invalid edge sensitivity should raise a ValueError.
+        '''
+        min_val = -999
+        max_val = 999
+
+        test_signal = Signal(intbv(0, min=min_val, max=max_val))
+
+        source = random_source(test_signal, self.clock, self.reset)
+
+        self.assertRaisesRegex(
+            ValueError, 'Invalid edge sensitivity', handler_sink,
+            test_signal, self.clock, self.handler, edge_sensitivity='INVALID')
+
+
 class TestRecorderSink(TestCase):
     '''There should be a block that records a signal. It should be
     constructed with a signal and a clock, and it should record every value
@@ -1594,7 +1750,7 @@ class TestLutSignalDriver(TestCase):
                 vhdl_code = f.read()
 
             self.assertTrue(
-                '\n-- <name_annotation> signal my_signal_name\n' in vhdl_code)
+                '\n-- <name_annotation> sig my_signal_name\n' in vhdl_code)
 
         finally:
             shutil.rmtree(tmp_dir)
@@ -1629,7 +1785,7 @@ class TestLutSignalDriver(TestCase):
                 verilog_code = f.read()
 
             self.assertTrue(
-                '\n// <name_annotation> signal my_signal_name\n' in
+                '\n// <name_annotation> sig my_signal_name\n' in
                 verilog_code)
 
         finally:

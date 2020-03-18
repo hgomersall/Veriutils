@@ -10,7 +10,7 @@ from math import log, floor
 from .utils import check_reset_signal
 
 __all__ = ['random_source', 'clock_source', 'init_reset_source',
-           'recorder_sink', 'copy_signal', 'lut_signal_driver']
+           'recorder_sink', 'handler_sink', 'copy_signal', 'lut_signal_driver']
 
 def copy_signal(signal_obj):
 
@@ -257,7 +257,7 @@ def recorder_sink(signal, clock, recorded_output_list,
     sensitivity is given by `edge_sensitivity` and can be either `posedge`
     for positive edge or `negedge` for negative edge.
 
-    A list is returned alongside the myhdl instance which is appended on
+    A list is passed in as `recorded_output_list` which is appended on
     each clock cycle with the next value given on `signal`
 
     If the signal is a list, then each value appended is a list, with
@@ -313,6 +313,34 @@ def recorder_sink(signal, clock, recorded_output_list,
     return recorder
 
 @block
+def handler_sink(
+    signal, clock, handler, edge_sensitivity='posedge'):
+    '''Passes the value on `signal` on each clock edge to a handler. The edge
+    sensitivity is given by `edge_sensitivity` and can be either `posedge`
+    for positive edge or `negedge` for negative edge.
+
+    On each clock edge, `handler` will be called, which should be a callable
+    that takes one argument which is the signal value on that clock cycle.
+
+    It is up to the handler what it does with the value.
+
+    If `signal` is not an instance of `Signal`, a ValueError will be raised.
+    '''
+
+    if edge_sensitivity == 'posedge':
+        edge = clock.posedge
+    elif edge_sensitivity == 'negedge':
+        edge = clock.negedge
+    else:
+        raise ValueError('Invalid edge sensitivity')
+
+    @always(edge)
+    def signal_handler():
+        handler(copy.copy(signal.val))
+
+    return signal_handler
+
+@block
 def _signal_driver_name_annotation(signal, name):
 
     @always_comb
@@ -326,12 +354,12 @@ def _signal_driver_name_annotation(signal, name):
     return non_block
 
 @block
-def lut_signal_driver(signal, drive_lut, clock, edge_sensitivity='posedge',
+def lut_signal_driver(sig, drive_lut, clock, edge_sensitivity='posedge',
                      signal_name=None):
     '''Drive the output from a look-up table. The lookup table is defined by
     `lut` which should be an iterable object.
 
-    `signal` is updated on each positive or negative clock edge from the
+    `sig` is updated on each positive or negative clock edge from the
     next value in the lookup table.
 
     The lookup table will wrap around when all the values are exhausted.
@@ -365,7 +393,7 @@ def lut_signal_driver(signal, drive_lut, clock, edge_sensitivity='posedge',
         def lut_driver():
             lut_idx = intbv(0, min=0, max=len(drive_lut))
             while True:
-                signal.next = drive_lut[lut_idx]
+                sig.next = drive_lut[lut_idx]
                 yield clock.posedge
                 if lut_idx + 1 >= lut_length:
                     lut_idx[:] = 0
@@ -377,7 +405,7 @@ def lut_signal_driver(signal, drive_lut, clock, edge_sensitivity='posedge',
         def lut_driver():
             lut_idx = intbv(0, min=0, max=len(drive_lut))
             while True:
-                signal.next = drive_lut[lut_idx]
+                sig.next = drive_lut[lut_idx]
                 yield clock.negedge
                 if lut_idx + 1 >= lut_length:
                     lut_idx[:] = 0
@@ -385,7 +413,7 @@ def lut_signal_driver(signal, drive_lut, clock, edge_sensitivity='posedge',
                     lut_idx[:] = lut_idx + 1
 
     if signal_name is not None:
-        return _signal_driver_name_annotation(signal, signal_name), lut_driver
+        return _signal_driver_name_annotation(sig, signal_name), lut_driver
     else:
         return lut_driver
 

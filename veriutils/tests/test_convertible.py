@@ -20,12 +20,15 @@ def _conversion_test(
     '''
 
     sim_object = SynchronousTest(dut_factory, ref_factory, args, arg_types,
-                                 custom_sources=custom_sources)
+                                 custom_sources=custom_sources, **kwargs)
 
     # We need to create the test data
     myhdl_outputs = sim_object.cosimulate(cycles)
 
     tmp_dir = tempfile.mkdtemp()
+
+    toVHDL.initial_values = True
+    toVerilog.initial_values = True
 
     try:
         project_name = 'tmp_project'

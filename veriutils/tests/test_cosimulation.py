@@ -51,8 +51,9 @@ class CosimulationTestMixin(object):
                                   'clock': 'clock'}
 
         self.sim_checker = mock.Mock()
+
         @block
-        def identity_factory(test_input, test_output, reset, clock):
+        def identity_factory(test_input, test_output, reset, clock, **kwargs):
             @always_seq(clock.posedge, reset=reset)
             def identity():
                 if __debug__:
@@ -414,6 +415,33 @@ class CosimulationTestMixin(object):
         self.assertEqual(
             dut_results['axi_interface_out']['incomplete_packet'], {})
 
+    def test_invalid_axi_stream_out_raises(self):
+        '''If a signal is set to be an axi_stream_out type but is not an
+        instance of or _in_ an instance of kea.axi.AxiStreamInterface, a
+        ValueError should be raised.
+        '''
+        self.default_arg_types['test_output'] = 'axi_stream_out'
+
+        self.assertRaisesRegex(
+            ValueError, 'Signal is set to "axi_stream_out", but is not in an '
+            'interface', self.construct_and_simulate, 10,
+            self.identity_factory, self.identity_factory, self.default_args,
+            self.default_arg_types)
+
+
+        class NotAxiStreamInterface(object):
+            def __init__(self):
+                self.a_signal = Signal(False)
+
+        self.default_args['test_output'] = NotAxiStreamInterface()
+        self.default_arg_types['test_output'] = 'axi_stream_out'
+
+        self.assertRaisesRegex(
+            ValueError, 'Signal is set to "axi_stream_out", but is not in an '
+            'interface of type AxiStreamInterface',
+            self.construct_and_simulate, 10, self.identity_factory,
+            self.identity_factory, self.default_args, self.default_arg_types)
+
     def test_axi_stream_out_with_incomplete_packet(self):
         '''It should be possible to use an ``axi_stream_out`` with an
         incomplete last packet, in which case the incomplete packet is set
@@ -737,9 +765,7 @@ class CosimulationTestMixin(object):
         # to the pipeline delay from turn on to visibility at the output
         # for axi_offset_increment above and the first few values in the
         # signal_record to propagate through the playback block.
-        dut_out_invalids = [
-            each['TVALID'] for each in
-            dut_results['axi_interface_out']['signals'][3:]]
+        dut_out_invalids = dut_results['axi_interface_out.TVALID'][3:]
 
         packet_invalids = [
             False if val is None else True for val in
@@ -747,6 +773,158 @@ class CosimulationTestMixin(object):
 
         # Remove the last element to make the lists equal length
         self.assertEqual(dut_out_invalids, packet_invalids)
+
+    def test_axi_stream_interfaces_in_hierarchy(self):
+        '''It should be possible for axi interfaces to be not necessarily at
+        the top level. That is, it should be possible for the axi interfaces
+        to be themselves sub-interfaces.
+        '''
+
+        seed = random.randrange(0, 2**32)
+        print(seed)
+        random.seed(seed)
+        self.clock = Signal(bool(1))
+
+        class TestInterface(object):
+            def __init__(self):
+                self.axi = AxiStreamInterface()
+
+        self.test_in = TestInterface()
+        self.test_out = TestInterface()
+
+        # TID and TDEST are not used therefore the AxiSlaveBFM will interpret
+        # the stream as (0, 0)
+        stream = (0, 0)
+
+        max_packet_length = 20
+        max_new_packets = 50
+        max_val = 2**(8 * self.test_out.axi.bus_width)
+
+        def val_gen():
+            # Generates Nones about half the time probability
+            val = random.randrange(0, max_val*2)
+            if val >= max_val:
+                return None
+            else:
+                return val
+
+        packet_list = {stream: deque([
+            deque([val_gen() for m
+             in range(random.randrange(0, max_packet_length))]) for n
+            in range(random.randrange(0, max_new_packets))])}
+
+        self.default_args = {'test_in': self.test_in,
+                             'test_out': self.test_out,
+                             'clock': self.clock}
+
+        self.default_arg_types = {
+            'test_in': {'axi': 'axi_stream_in'},
+            'test_out': {'axi': 'axi_stream_out'},
+            'clock': 'clock'}
+
+        @block
+        def axi_identity(clock, test_in, test_out):
+
+            @always_comb
+            def assign_signals():
+                test_in.axi.TREADY.next = test_out.axi.TREADY
+                test_out.axi.TVALID.next = test_in.axi.TVALID
+                test_out.axi.TLAST.next = test_in.axi.TLAST
+                test_out.axi.TDATA.next = test_in.axi.TDATA
+
+            return assign_signals
+
+
+        sim_cycles = sum(len(packet) for packet in packet_list[stream]) + 1
+
+        None_trimmed_packet_list = {stream: deque([
+            deque([val for val in packet if val is not None]) for packet in
+            packet_list[stream]])}
+
+        trimmed_packets = {stream: deque([
+            packet for packet in None_trimmed_packet_list[stream] if
+            len(packet) > 0])}
+
+        master_bfm = AxiStreamMasterBFM()
+        custom_sources = [
+            (master_bfm.model, (self.clock, self.test_in.axi), {})]
+
+        # Calling several times should work just fine
+        master_bfm.add_data(packet_list[stream])
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, axi_identity, axi_identity,
+            self.default_args, self.default_arg_types,
+            custom_sources=custom_sources)
+
+        if trimmed_packets == {(0, 0): deque([])}:
+            trimmed_packets = {}
+
+        self.assertEqual(
+            ref_results['test_out.axi']['packets'], trimmed_packets)
+
+        self.assertEqual(
+            ref_results['test_out.axi']['incomplete_packet'], {})
+
+        self.assertEqual(
+            dut_results['test_out.axi']['packets'], trimmed_packets)
+
+        self.assertEqual(
+            dut_results['test_out.axi']['incomplete_packet'], {})
+
+
+    def test_invalid_axi_stream_in_raises(self):
+        '''If a signal is set to be an axi_stream_in type but is not an
+        instance of or _in_ an instance of kea.axi.AxiStreamInterface, a
+        ValueError should be raised.
+        '''
+        self.default_arg_types['test_input'] = 'axi_stream_in'
+
+        self.assertRaisesRegex(
+            ValueError, 'Signal is set to "axi_stream_in", but is not in an '
+            'interface', self.construct_and_simulate, 10,
+            self.identity_factory, self.identity_factory, self.default_args,
+            self.default_arg_types)
+
+
+        class NotAxiStreamInterface(object):
+            def __init__(self):
+                self.a_signal = Signal(False)
+
+        self.default_args['test_input'] = NotAxiStreamInterface()
+        self.default_arg_types['test_input'] = 'axi_stream_in'
+
+        self.assertRaisesRegex(
+            ValueError, 'Signal is set to "axi_stream_in", but is not in an '
+            'interface of type AxiStreamInterface',
+            self.construct_and_simulate, 10, self.identity_factory,
+            self.identity_factory, self.default_args, self.default_arg_types)
+
+    def test_non_signal_set_as_signal_type(self):
+        '''If an object that contains no signal component is set to be a
+        signal type (i.e. anything other than non-signal), a ValueError should
+        be raised.
+        '''
+
+        class NonSignal(object):
+            def __init__(self):
+                # Add an attribute
+                self.foo = 10
+
+        self.default_args['extra_input'] = NonSignal()
+        self.default_arg_types['extra_input'] = 'non-signal'
+
+        # Should pass
+        self.construct_and_simulate(
+            10, self.identity_factory, self.identity_factory,
+            self.default_args, self.default_arg_types)
+
+        self.default_arg_types['extra_input'] = 'custom'
+
+        self.assertRaisesRegex(
+            ValueError, 'A argument that has no signal component is set to '
+            'be a signal type', self.construct_and_simulate, 10,
+            self.identity_factory, self.identity_factory, self.default_args,
+            self.default_arg_types)
 
     def test_axi_stream_in_no_TLAST_argument(self):
         '''It should be possible to use an axi stream interface with no TLAST
@@ -1578,6 +1756,288 @@ class CosimulationTestMixin(object):
         for signal in dut_results:
             self.assertEqual(dut_results[signal], ref_results[signal])
 
+    def test_multilevel_interface_case(self):
+        '''It should be possible to work with interfaces of multiple levels'''
+
+        min_val = -1000
+        max_val = 1000
+
+        class Interface3(object):
+            def __init__(self):
+                self.h = Signal(intbv(0, min=min_val, max=max_val))
+                self.i = Signal(intbv(0, min=min_val, max=max_val))
+
+        class Interface2(object):
+            def __init__(self):
+                self.e = Signal(intbv(0, min=min_val, max=max_val))
+                self.f = Signal(intbv(0, min=min_val, max=max_val))
+                self.g = Interface3()
+
+        class Interface(object):
+            def __init__(self):
+                # The attributes are sorted, so we need to run through
+                # them in the correct order. 'a', 'b', 'c', 'd' is fine.
+                self.a = Signal(intbv(0, min=min_val, max=max_val))
+                self.b = Interface2()
+                self.c = Signal(bool(0))
+                self.d = Signal(bool(0))
+
+        @block
+        def identity_factory(
+            test_input1, test_input2, test_output1, test_output2, reset,
+            clock):
+
+            @always_seq(clock.posedge, reset=reset)
+            def identity():
+                if __debug__:
+                    self.sim_checker(copy.copy(test_input1.a.val),
+                                     copy.copy(test_input1.b.e.val),
+                                     copy.copy(test_input1.b.f.val),
+                                     copy.copy(test_input1.b.g.h.val),
+                                     copy.copy(test_input1.b.g.i.val),
+                                     copy.copy(test_input1.c.val),
+                                     copy.copy(test_input1.d.val),
+                                     copy.copy(test_input2.a.val),
+                                     copy.copy(test_input2.b.e.val),
+                                     copy.copy(test_input2.b.f.val),
+                                     copy.copy(test_input2.b.g.h.val),
+                                     copy.copy(test_input2.b.g.i.val),
+                                     copy.copy(test_input2.c.val),
+                                     copy.copy(test_input2.d.val))
+
+                test_output1.a.next = test_input1.a
+                test_output1.b.e.next = test_input1.b.e
+                test_output1.b.f.next = test_input1.b.f
+                test_output1.b.g.h.next = test_input1.b.g.h
+                test_output1.b.g.i.next = test_input1.b.g.i
+                test_output1.c.next = test_input1.c
+                test_output1.d.next = test_input1.d
+
+                test_output2.a.next = test_input2.a
+                test_output2.b.e.next = test_input2.b.e
+                test_output2.b.f.next = test_input2.b.f
+                test_output2.b.g.h.next = test_input2.b.g.h
+                test_output2.b.g.i.next = test_input2.b.g.i
+                test_output2.c.next = test_input2.c
+                test_output2.d.next = test_input2.d
+
+            return identity
+
+        # We create two instances of the interface
+        args = {'test_input1': Interface(),
+                'test_input2': Interface(),
+                'test_output1': Interface(),
+                'test_output2': Interface(),
+                'clock': self.clock,
+                'reset': self.reset}
+
+        arg_types = {'test_input1': 'random',
+                     'test_input2': 'random',
+                     'test_output1': 'output',
+                     'test_output2': 'output',
+                     'reset': 'init_reset',
+                     'clock': 'clock'}
+
+        sim_cycles = 31
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, identity_factory, identity_factory, args, arg_types)
+
+        # The mock should be called twice per cycle, with the caveat that
+        # it is not called at all on the reset cycles.
+        assert len(self.sim_checker.call_args_list) == (
+            (sim_cycles - self.reset_cycles) * 2)
+
+        # The expected calls are found from what is recorded on the output.
+        # These are recorded even during reset cycles, so we need to offset
+        # those.
+        # Also we record one cycl#e delayed from the sim_checker mock above,
+        # so we need to offset left by that too.
+        dut_expected_mock_calls = [
+            mock.call(each1['a'], each1['b']['e'], each1['b']['f'],
+                      each1['b']['g']['h'], each1['b']['g']['i'], each1['c'],
+                      each1['d'],
+                      each2['a'], each2['b']['e'], each2['b']['f'],
+                      each2['b']['g']['h'], each2['b']['g']['i'], each2['c'],
+                      each2['d'])
+            for each1, each2 in zip(
+                dut_results['test_output1'][self.reset_cycles:][1:],
+                dut_results['test_output2'][self.reset_cycles:][1:])]
+
+        ref_expected_mock_calls = [
+            mock.call(each1['a'], each1['b']['e'], each1['b']['f'],
+                      each1['b']['g']['h'], each1['b']['g']['i'], each1['c'],
+                      each1['d'],
+                      each2['a'], each2['b']['e'], each2['b']['f'],
+                      each2['b']['g']['h'], each2['b']['g']['i'], each2['c'],
+                      each2['d'])
+            for each1, each2 in zip(
+                ref_results['test_output1'][self.reset_cycles:][1:],
+                ref_results['test_output2'][self.reset_cycles:][1:])]
+
+        # The sim checker args should be shifted up by one sample since
+        # they record a sample earlier than the recorded outputs.
+        out_signals = zip(self.sim_checker.call_args_list[::2][:-1],
+                          self.sim_checker.call_args_list[1::2][:-1],
+                          dut_expected_mock_calls,
+                          ref_expected_mock_calls)
+
+        for dut_arg, ref_arg, expected_dut, expected_ref in out_signals:
+            # Should be true (defined by the test)
+            assert dut_arg == ref_arg
+
+            self.assertEqual(dut_arg, expected_dut)
+            self.assertEqual(ref_arg, expected_ref)
+
+        for signal in dut_results:
+            self.assertEqual(dut_results[signal], ref_results[signal])
+
+    def test_multilevel_hierarchy_with_no_signals_in_middle(self):
+        '''It should be possible to have an interface hierarchy in which some
+        levels in the hierarchy only contain other interfaces'''
+
+        args = self.default_args.copy()
+
+        class Interface2(object):
+            def __init__(self):
+                self.b = Signal(intbv(0)[5:])
+                self.c = Signal(intbv(0)[5:])
+
+        class Interface(object):
+            def __init__(self):
+                self.a = Interface2()
+
+        @block
+        def identity_factory(test_input, test_output, reset, clock):
+            @always_seq(clock.posedge, reset=reset)
+            def identity():
+                if __debug__:
+                    self.sim_checker(copy.copy(test_input.a.b.val),
+                                     copy.copy(test_input.a.c.val))
+
+                test_output.a.b.next = test_input.a.b
+                test_output.a.c.next = test_input.a.c
+
+            return identity
+
+        args['test_input'] = Interface()
+        args['test_output'] = Interface()
+
+        sim_cycles = 31
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, identity_factory, identity_factory,
+            args, self.default_arg_types)
+
+        # The mock should be called twice per cycle, with the caveat that
+        # it is not called at all on the reset cycles.
+        assert len(self.sim_checker.call_args_list) == (
+            (sim_cycles - self.reset_cycles) * 2)
+
+        # The expected calls are found from what is recorded on the output.
+        # These are recorded even during reset cycles, so we need to offset
+        # those.
+        # Also we record one cycl#e delayed from the sim_checker mock above,
+        # so we need to offset left by that too.
+        dut_expected_mock_calls = [
+            mock.call(each['a']['b'], each['a']['c'])
+            for each in dut_results['test_output'][self.reset_cycles:][1:]]
+
+        ref_expected_mock_calls = [
+            mock.call(each['a']['b'], each['a']['c'])
+            for each in ref_results['test_output'][self.reset_cycles:][1:]]
+
+        # The sim checker args should be shifted up by one sample since
+        # they record a sample earlier than the recorded outputs.
+        out_signals = zip(self.sim_checker.call_args_list[::2][:-1],
+                          self.sim_checker.call_args_list[1::2][:-1],
+                          dut_expected_mock_calls,
+                          ref_expected_mock_calls)
+
+        for dut_arg, ref_arg, expected_dut, expected_ref in out_signals:
+            # Should be true (defined by the test)
+            assert dut_arg == ref_arg
+
+            self.assertEqual(dut_arg, expected_dut)
+            self.assertEqual(ref_arg, expected_ref)
+
+        for signal in dut_results:
+            self.assertEqual(dut_results[signal], ref_results[signal])
+
+    def test_list_in_interface_case(self):
+        '''It should be possible to have lists of signals within an
+        interface'''
+
+        args = self.default_args.copy()
+
+        class Interface2(object):
+            def __init__(self):
+                self.b = [Signal(intbv(0)[5:]) for n in range(3)]
+
+        class Interface(object):
+            def __init__(self):
+                self.a = Interface2()
+
+        @block
+        def identity_factory(test_input, test_output, reset, clock):
+            @always_seq(clock.posedge, reset=reset)
+            def identity():
+                if __debug__:
+                    self.sim_checker(copy.copy(test_input.a.b[0].val),
+                                     copy.copy(test_input.a.b[1].val),
+                                     copy.copy(test_input.a.b[2].val))
+
+                test_output.a.b[0].next = test_input.a.b[0]
+                test_output.a.b[1].next = test_input.a.b[1]
+                test_output.a.b[2].next = test_input.a.b[2]
+
+            return identity
+
+        args['test_input'] = Interface()
+        args['test_output'] = Interface()
+
+        sim_cycles = 31
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, identity_factory, identity_factory,
+            args, self.default_arg_types,
+            enforce_convertible_top_level_interfaces=False)
+
+        # The mock should be called twice per cycle, with the caveat that
+        # it is not called at all on the reset cycles.
+        assert len(self.sim_checker.call_args_list) == (
+            (sim_cycles - self.reset_cycles) * 2)
+
+        # The expected calls are found from what is recorded on the output.
+        # These are recorded even during reset cycles, so we need to offset
+        # those.
+        # Also we record one cycle delayed from the sim_checker mock above,
+        # so we need to offset left by that too.
+        dut_expected_mock_calls = [
+            mock.call(each['a']['b'][0], each['a']['b'][1], each['a']['b'][2])
+            for each in dut_results['test_output'][self.reset_cycles:][1:]]
+
+        ref_expected_mock_calls = [
+            mock.call(each['a']['b'][0], each['a']['b'][1], each['a']['b'][2])
+            for each in ref_results['test_output'][self.reset_cycles:][1:]]
+
+        # The sim checker args should be shifted up by one sample since
+        # they record a sample earlier than the recorded outputs.
+        out_signals = zip(self.sim_checker.call_args_list[::2][:-1],
+                          self.sim_checker.call_args_list[1::2][:-1],
+                          dut_expected_mock_calls,
+                          ref_expected_mock_calls)
+
+        for dut_arg, ref_arg, expected_dut, expected_ref in out_signals:
+            # Should be true (defined by the test)
+            assert dut_arg == ref_arg
+
+            self.assertEqual(dut_arg, expected_dut)
+            self.assertEqual(ref_arg, expected_ref)
+
+        for signal in dut_results:
+            self.assertEqual(dut_results[signal], ref_results[signal])
+
 
     def test_interface_with_non_signal_attribute(self):
         '''It should be possible to work with interfaces that contain an
@@ -1697,6 +2157,111 @@ class CosimulationTestMixin(object):
         for signal in dut_results:
             self.assertEqual(dut_results[signal], ref_results[signal])
 
+    def test_non_signal_type_in_interface(self):
+        '''It should be possible to explicitly declare a non-signal in an
+        interface at any level.
+        '''
+
+        args = self.default_args.copy()
+        arg_types = self.default_arg_types.copy()
+
+        min_val = -1000
+        max_val = 1000
+
+        class NonInterface(object):
+            def __init__(self):
+                self.non_sig = 20
+
+        class Interface(object):
+            def __init__(self):
+                self.non_sig = 10
+                self.sig = Signal(intbv(0, min=min_val, max=max_val))
+                self.non_interface = NonInterface()
+
+        @block
+        def identity_factory(test_input, test_output, reset, clock):
+            @always_seq(clock.posedge, reset=reset)
+            def identity():
+                if __debug__:
+                    self.sim_checker(copy.copy(test_input.sig.val))
+
+                test_output.sig.next = test_input.sig
+
+            return identity
+
+        args['test_input'] = Interface()
+        args['test_output'] = Interface()
+
+        arg_types['test_output'] = {
+            'sig': 'output',
+            'non_sig': 'non-signal',
+            'non_interface': {'non_sig': 'non-signal'}}
+
+        arg_types['test_input'] = {
+            'sig': 'random',
+            'non_sig': 'non-signal',
+            'non_interface': {'non_sig': 'non-signal'}}
+
+        sim_cycles = 31
+
+        dut_results, ref_results = self.construct_and_simulate(
+            sim_cycles, identity_factory, identity_factory,
+            args, arg_types)
+
+        for signal in dut_results:
+            self.assertEqual(dut_results[signal], ref_results[signal])
+
+# FIXME not sure how to trigger this error anymore
+#    def test_invalid_signal_type_error(self):
+#        '''If an object is set to be of type that we cannot handle, a
+#        ValueError should be raised.
+#        '''
+#
+#        args = self.default_args.copy()
+#        arg_types = self.default_arg_types.copy()
+#
+#        min_val = -1000
+#        max_val = 1000
+#
+#        # We check using a list of signals on an interface, which might be a
+#        # useful thing to do at some point, but is unsupported at the moment.
+#
+#        class Interface(object):
+#            def __init__(self):
+#                self.sig = Signal(intbv(0, min=min_val, max=max_val))
+#                self.sig_list = {
+#                    0: Signal(intbv(0, min=min_val, max=max_val)),
+#                    1: Signal(intbv(0, min=min_val, max=max_val)),
+#                    Signal(intbv(0, min=min_val, max=max_val))}
+#
+#        @block
+#        def identity_factory(test_input, test_output, reset, clock):
+#            @always_seq(clock.posedge, reset=reset)
+#            def identity():
+#                test_output.sig.next = test_input.sig
+#                for i in range(3):
+#                    test_output.sig_list[i].next = test_input.sig_list[i]
+#
+#            return identity
+#
+#        args['test_input'] = Interface()
+#        args['test_output'] = Interface()
+#
+#        arg_types['test_output'] = {
+#            'sig': 'output',
+#            'sig_list': 'output'}
+#
+#        arg_types['test_input'] = {
+#            'sig': 'random',
+#            'sig_list': 'random'}
+#
+#        sim_cycles = 31
+#
+#        self.assertRaisesRegex(
+#            ValueError, 'Unsupported argument type',
+#            self.construct_and_simulate, sim_cycles, identity_factory,
+#            identity_factory, args, arg_types)
+
     def test_signal_list_arg(self):
         '''It should be possible to work with lists of signals.
 
@@ -1738,6 +2303,7 @@ class CosimulationTestMixin(object):
         args['test_output'] = output_signal_list
 
         sim_cycles = 31
+        sim_cycles = 7
 
         dut_results, ref_results = self.construct_and_simulate(
             sim_cycles, identity_factory, identity_factory,
@@ -1760,10 +2326,8 @@ class CosimulationTestMixin(object):
 
         ref_expected_mock_calls = [
             mock.call(*(each_sig for each_sig in each))
-            for each in dut_results['test_output'][self.reset_cycles:][1:]]
+            for each in ref_results['test_output'][self.reset_cycles:][1:]]
 
-        # The sim checker args should be shifted up by one sample since
-        # they record a sample earlier than the recorded outputs.
         out_signals = zip(self.sim_checker.call_args_list[::2][:-1],
                           self.sim_checker.call_args_list[1::2][:-1],
                           dut_expected_mock_calls,
@@ -1802,6 +2366,25 @@ class CosimulationTestMixin(object):
             {'test_input': 'custom', 'test_output': {'a': 'INVALID'},
              'reset': 'custom_reset', 'clock': 'custom'})
 
+    def test_enforcing_convertible_top_level_interfaces_by_default(self):
+        '''By default, if an interface argument is not only a single level
+        deep or contains a list of signals, then a ValueError should be raised.
+
+        This is to protect against MyHDL not detecting such arguments but
+        failing to convert properly.
+        '''
+
+        class InterfaceWithList:
+            def __init__(self):
+                self.a = [Signal(False), Signal(False)]
+
+        self.default_args['test_output'] = InterfaceWithList()
+
+        self.assertRaisesRegex(
+            ValueError, 'Lists in interfaces are explicitly disallowed',
+            self.construct_and_simulate, 30,
+            self.identity_factory, self.identity_factory, self.default_args,
+            self.default_arg_types)
 
     def test_argtype_dict_arg_mismatch(self):
         '''All the arg types in a dict should correspond to a valid signal.
@@ -1832,15 +2415,23 @@ class CosimulationTestMixin(object):
         min_val = -1000
         max_val = 1000
 
+        class Interface2(object):
+
+            def __init__(self):
+                self.d = Signal(intbv(0, min=min_val, max=max_val))
+                self.e = Signal(bool(0))
+
         class Interface(object):
             def __init__(self):
                 # The attributes are sorted, so we need to run through
                 # them in the correct order. 'a', 'b', 'c', 'd' is fine.
                 self.a = Signal(intbv(0, min=min_val, max=max_val))
                 self.b = Signal(bool(0))
+                self.c = Interface2()
 
         # A bit of a hack to check the relevant signals are different
         signals = []
+
         @block
         def identity_factory(test_input, test_output, reset, clock):
             @always_seq(clock.posedge, reset=reset)
@@ -1848,18 +2439,26 @@ class CosimulationTestMixin(object):
                 if __debug__:
                     # record the inputs
                     self.sim_checker(copy.copy(test_input.a.val),
-                                     copy.copy(test_output.b.val))
+                                     copy.copy(test_output.b.val),
+                                     copy.copy(test_input.c.d.val),
+                                     copy.copy(test_output.c.e.val))
 
                     if len(signals) < 2:
                         # need to record from both dut and ref
                         signals.append(
                             {'test_output.a': test_output.a,
                              'test_output.b': test_output.b,
+                             'test_output.c.d': test_output.c.d,
+                             'test_output.c.e': test_output.c.e,
                              'test_input.a': test_input.a,
-                             'test_input.b': test_input.b})
+                             'test_input.b': test_input.b,
+                             'test_input.c.d': test_input.c.d,
+                             'test_input.c.e': test_input.c.e})
 
                 test_output.a.next = test_input.a
                 test_input.b.next = test_output.b
+                test_output.c.d.next = test_input.c.d
+                test_input.c.e.next = test_output.c.e
 
             return identity
 
@@ -1867,8 +2466,10 @@ class CosimulationTestMixin(object):
         args['test_output'] = Interface()
 
         # Set up the interface types
-        arg_types['test_input'] = {'a': 'random', 'b': 'output'}
-        arg_types['test_output'] = {'a': 'output', 'b': 'random'}
+        arg_types['test_input'] = {
+            'a': 'random', 'b': 'output', 'c': {'d': 'random', 'e': 'output'}}
+        arg_types['test_output'] = {
+            'a': 'output', 'b': 'random', 'c': {'d': 'output', 'e': 'random'}}
 
         sim_cycles = 31
 
@@ -1885,6 +2486,14 @@ class CosimulationTestMixin(object):
                          signals[1]['test_output.a'])
         self.assertIsNot(signals[0]['test_input.b'],
                          signals[1]['test_input.b'])
+        self.assertIsNot(signals[0]['test_output.c.d'],
+                         signals[1]['test_output.c.d'])
+        self.assertIsNot(signals[0]['test_input.c.d'],
+                         signals[1]['test_input.c.d'])
+        self.assertIsNot(signals[0]['test_output.c.e'],
+                         signals[1]['test_output.c.e'])
+        self.assertIsNot(signals[0]['test_input.c.e'],
+                         signals[1]['test_input.c.e'])
 
         # Check the signals are being driven properly. The random values
         # are very unlikely to be all zeros, which is what we check for here.
@@ -1893,6 +2502,14 @@ class CosimulationTestMixin(object):
 
         self.assertFalse(
             sum([abs(each['b']) for each in ref_results['test_output']]) == 0)
+
+        self.assertFalse(
+            sum([abs(each['c']['e'])
+                 for each in ref_results['test_output']]) == 0)
+
+        self.assertFalse(
+            sum([abs(each['c']['d'])
+                 for each in ref_results['test_input']]) == 0)
 
         # Also, check the output is correct
         if self.check_mocks:
@@ -1908,14 +2525,16 @@ class CosimulationTestMixin(object):
             # Also we record one cycle delayed from the sim_checker mock
             # above, so we need to offset left by that too.
             dut_expected_mock_calls = [
-                mock.call(_out['a'], _inp['b']) for _inp, _out  in
-                zip(dut_results['test_input'][self.reset_cycles:][1:],
-                    dut_results['test_output'][self.reset_cycles:][1:])]
+                mock.call(_inp['a'], _out['b'], _inp['c']['d'], _out['c']['e'])
+                for _inp, _out  in zip(
+                    dut_results['test_output'][self.reset_cycles:][1:],
+                    dut_results['test_input'][self.reset_cycles:][1:])]
 
             ref_expected_mock_calls = [
-                mock.call(_out['a'], _inp['b']) for _inp, _out  in
-                zip(ref_results['test_input'][self.reset_cycles:][1:],
-                    ref_results['test_output'][self.reset_cycles:][1:])]
+                mock.call(_inp['a'], _out['b'], _inp['c']['d'], _out['c']['e'])
+                for _inp, _out  in zip(
+                    ref_results['test_output'][self.reset_cycles:][1:],
+                    ref_results['test_input'][self.reset_cycles:][1:])]
 
             # The sim checker args should be shifted up by one sample since
             # they record a sample earlier than the recorded outputs.
@@ -2323,9 +2942,7 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
 
         for n in range(3):
             master_bfm.add_data(packet_list[stream])
-
             dut_results, ref_results = test_obj.cosimulate(sim_cycles)
-
             self.assertEqual(
                 ref_results['axi_interface_out']['packets'], trimmed_packets)
 
@@ -2419,8 +3036,9 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
             test_obj.dut_convertible_top, 'foobarfile')
 
 
-    def test_dut_convertible_top(self):
-        '''There should be a method to get a top-level convertible dut.
+    def test_dut_convertible_top_to_VHDL(self):
+        '''There should be a method to get a top-level convertible dut that
+        can convert to VHDL
 
         In order that the cosimulation class can be used to generate
         converted code of the device under test, it should be possible to
@@ -2463,6 +3081,52 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
             top = test_obj.dut_convertible_top(tmp_dir)
             top.convert(hdl='VHDL', path=tmp_dir)
 
+            self.assertTrue(os.path.exists(output_file))
+
+        finally:
+            shutil.rmtree(tmp_dir)
+
+    def test_dut_convertible_top_to_verilog(self):
+        '''There should be a method to get a top-level convertible dut that
+        can convert to Verilog
+
+        In order that the cosimulation class can be used to generate
+        converted code of the device under test, it should be possible to
+        provide a block upon which `convert()` can be called.
+
+        The text file to which the signal outputs should be written should
+        be the only argument to the method.
+
+        The method should take no other arguments since the SynchronousTest
+        object should have all the signals internally defined.
+        '''
+
+        simulated_input_cycles = 20
+
+        args = self.default_args.copy()
+        arg_types = self.default_arg_types.copy()
+
+        args['test_input2'] = Signal(intbv(0)[10:])
+        arg_types['test_input2'] = 'random'
+
+        @block
+        def dut(test_input, test_input2, test_output, reset, clock):
+
+            @always_seq(self.clock.posedge, reset)
+            def test_dut():
+
+                test_output.next = test_input + test_input2
+
+            return test_dut
+
+        test_obj = SynchronousTest(dut, dut, args, arg_types)
+
+        tmp_dir = tempfile.mkdtemp()
+        output_file = os.path.join(tmp_dir, 'dut_convertible_top.v')
+
+        test_obj.cosimulate(simulated_input_cycles)
+
+        try:
             top2 = test_obj.dut_convertible_top(tmp_dir)
             top2.convert(hdl='Verilog', path=tmp_dir)
 
@@ -2733,6 +3397,54 @@ class TestSynchronousTestClass(CosimulationTestMixin, TestCase):
             shutil.rmtree(tmp_dir)
 
 
+class TestSimulationOutputGroup(TestCase):
+
+    def test_equality(self):
+        '''The SimulationOutputGroup should be able to test for equality
+        against other instances of SimulationOutputGroup.
+
+        If the item being compared to is not another instance of
+        SimulationOutputGroup then the the equality test should be False.
+        '''
+        from veriutils.cosimulation import SimulationOutputGroup
+
+        test_dict = {'a': [1, 2, 3], 'b': [4, 5, 6]}
+        test_dict2 = {'a': [1, 2, 3], 'b': [4, 5, 6]}
+        a = SimulationOutputGroup(test_dict)
+        b = SimulationOutputGroup(test_dict2)
+
+        self.assertTrue(a == b)
+        self.assertTrue(test_dict != b)
+
+        test_dict = {'a': [1, 2, 4], 'b': [4, 5, 6]}
+        a = SimulationOutputGroup(test_dict)
+
+        self.assertTrue(a != b)
+
+class TestSimulationOutputs(TestCase):
+
+    def test_equality(self):
+        '''The SimulationOutputs should be able to test for equality
+        against other instances of SimulationOutputs.
+
+        The equality check should be also return True on instances of dict
+        that contain the same data.
+        '''
+
+        from veriutils.cosimulation import SimulationOutputs
+
+        test_dict = {'a': [1, 2, 3], 'b': [4, 5, 6]}
+        test_dict2 = {'a': [1, 2, 3], 'b': [4, 5, 6]}
+        a = SimulationOutputs(test_dict)
+        b = SimulationOutputs(test_dict2)
+
+        self.assertTrue(a == b)
+        self.assertTrue(test_dict == b)
+
+        test_dict = {'a': [1, 2, 4], 'b': [4, 5, 6]}
+        a = SimulationOutputs(test_dict)
+
+        self.assertTrue(a != b)
 
 
 class TestCosimulationFunction(CosimulationTestMixin, TestCase):
