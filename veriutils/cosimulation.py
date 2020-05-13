@@ -1234,7 +1234,8 @@ class SynchronousTest(object):
 
     def __init__(self, dut_factory, ref_factory, args, arg_types,
                  period=None, custom_sources=None,
-                 enforce_convertible_top_level_interfaces=True):
+                 enforce_convertible_top_level_interfaces=True,
+                 time_units='ns'):
         '''Construct a synchronous test case for the pair of factories
         given by `dut_factory` and `ref_factory`. Each factory is constructed
         with the provided args (which probably corresponds to a signal list).
@@ -1309,7 +1310,15 @@ class SynchronousTest(object):
         these features, you need to explicitly set
         ``enforce_convertible_top_level_interfaces`` to ``False``. We only
         enforce the case in which the top level interface is contains a list as
-        that is the case that MyHDL fails to error for on conversion.  '''
+        that is the case that MyHDL fails to error for on conversion.
+
+        ``time_units`` is used to define the units of the ``period`` argument.
+        It is also used in cosimulate to create the ``timescale``.
+        '''
+
+        # Reset the clock source block count
+        global clock_source_block_count
+        clock_source_block_count = 0
 
         valid_arg_types = ('clock', 'init_reset', 'random', 'output',
                            'custom', 'custom_reset', 'axi_stream_out',
@@ -1319,6 +1328,13 @@ class SynchronousTest(object):
             self.period = PERIOD
         else:
             self.period = period
+
+        if time_units not in AVAILABLE_TIME_UNITS:
+            raise ValueError(
+                'Invalid time unit. Please select from: ' +
+                ', '.join(AVAILABLE_TIME_UNITS))
+
+        self.time_units = time_units
 
         self.dut_factory = dut_factory
         self.ref_factory = ref_factory
@@ -1369,7 +1385,8 @@ class SynchronousTest(object):
                              'one reset in the argument list.')
 
         self.clock = flattened_signals[flattened_types.index('clock')]
-        self.clockgen_factory = (clock_source, (self.clock, self.period), {})
+        self.clockgen_factory = (
+            clock_source, (self.clock, self.period, self.time_units), {})
 
         self._use_init_reset = False
 
@@ -1551,8 +1568,7 @@ class SynchronousTest(object):
 
         self._simulator_run = False
 
-    def cosimulate(
-        self, cycles, vcd_name=None, timescale=None):
+    def cosimulate(self, cycles, vcd_name=None):
         '''Co-simulate the device under test and the reference design.
 
         Return a pair tuple of lists, each corresponding to the recorded
@@ -1564,9 +1580,6 @@ class SynchronousTest(object):
 
         If ``vcd_name`` is not ``None``, a vcd file will be created of the
         waveform.
-
-        If ``timescale`` is not ``None``, the simulation will be run under the
-        timescale specified.
         '''
 
         # And also clear the AXI sink BFMs
@@ -1648,10 +1661,11 @@ class SynchronousTest(object):
         else:
             trace = False
 
-        if timescale is not None:
-            top_level_block.config_sim(trace=trace, timescale=timescale)
-        else:
-            top_level_block.config_sim(trace=trace)
+        # Generate the appropriate timescale based on the time_units. This is
+        # in the form '1ns/1ns' (when time_units is ns).
+        timescale = '1' + str(self.time_units) + '/1' + str(self.time_units)
+
+        top_level_block.config_sim(trace=trace, timescale=timescale)
 
         try:
             if cycles is not None:
@@ -1771,7 +1785,8 @@ class SynchronousTest(object):
                 raise ValueError('enum signals are currently unsupported')
 
             elif each_signal.type == 'clock':
-                instances.append(clock_source(clock, self.period))
+                instances.append(
+                    clock_source(clock, self.period, self.time_units))
 
             elif each_signal.type == 'init_reset':
                 # This should be played back
@@ -1908,7 +1923,7 @@ class SynchronousTest(object):
 def myhdl_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
                        period=None, custom_sources=None,
                        enforce_convertible_top_level_interfaces=True,
-                       vcd_name=None, timescale=None):
+                       vcd_name=None, time_units='ns'):
     '''Run a cosimulation of a pair of MyHDL instances. This is a thin
     wrapper around a :class:`SynchronousTest` object, in which the object
     is created and then the cosimulate method is run, with the ``cycles``
@@ -1920,9 +1935,8 @@ def myhdl_cosimulation(cycles, dut_factory, ref_factory, args, arg_types,
     '''
     sim_object = SynchronousTest(
         dut_factory, ref_factory, args, arg_types, period, custom_sources,
-        enforce_convertible_top_level_interfaces)
+        enforce_convertible_top_level_interfaces, time_units=time_units)
 
-    return sim_object.cosimulate(
-        cycles, vcd_name=vcd_name, timescale=timescale)
+    return sim_object.cosimulate(cycles, vcd_name=vcd_name)
 
 

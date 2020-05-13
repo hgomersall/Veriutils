@@ -171,6 +171,21 @@ class TestClockSource(TestCase):
         self.assertRaisesRegex(ValueError, 'The passed clock signal is not '
                                'a signal', clock_source, not_a_signal, 10)
 
+    def test_not_time_unit(self):
+        '''Passing something that is not a time unit should raise a ValueError
+        '''
+        clock = Signal(False)
+        not_a_time_unit = 'A string'
+
+        self.assertRaisesRegex(
+            ValueError,
+            ('Invalid time unit. Please select from: ' +
+             ', '.join(AVAILABLE_TIME_UNITS)),
+            clock_source,
+            clock,
+            10,
+            not_a_time_unit)
+
     def test_even_period_high_start(self):
         '''Even period with high start should give high on every even interval
         '''
