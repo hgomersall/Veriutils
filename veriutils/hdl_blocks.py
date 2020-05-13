@@ -10,7 +10,12 @@ from math import log, floor
 from .utils import check_reset_signal
 
 __all__ = ['random_source', 'clock_source', 'init_reset_source',
-           'recorder_sink', 'handler_sink', 'copy_signal', 'lut_signal_driver']
+           'recorder_sink', 'handler_sink', 'copy_signal',
+           'lut_signal_driver', 'AVAILABLE_TIME_UNITS']
+
+# These are the available time units. VHDL can also handle 'hr', 'min', 'sec'
+# and 'fs'. These extra time units can be added if required.
+AVAILABLE_TIME_UNITS = ['ms', 'us', 'ns', 'ps']
 
 def copy_signal(signal_obj):
 
@@ -40,12 +45,23 @@ def copy_signal(signal_obj):
 
         return new_signal_obj
 
+clock_source_block_count = 0
 
 @block
-def clock_source(clock, period):
+def clock_source(clock, period, time_units='ns'):
 
     if not isinstance(clock, myhdl._Signal._Signal):
         raise ValueError('The passed clock signal is not a signal')
+
+    if time_units not in AVAILABLE_TIME_UNITS:
+        raise ValueError(
+            'Invalid time unit. Please select from: ' +
+            ', '.join(AVAILABLE_TIME_UNITS))
+
+    global clock_source_block_count
+
+    inst_count = clock_source_block_count
+    clock_source_block_count += 1
 
     even_period = period//2
     odd_period = period - even_period
@@ -66,33 +82,42 @@ def clock_source(clock, period):
             clock.next = not clock_state
             clock_state.next = not clock_state
 
-#    clock_source.verilog_code = '''
-#initial begin: CLOCK_SOURCE_CLOCKGEN
-#    $clock <= %d;
-#    while (1'b1) begin
-#        # $even_period;
-#        $clock <= (!$clock);
-#        # $odd_period;
-#        $clock <= (!$clock);
-#    end
-#end
-#''' % (start_val,)
-#
-#    clock_source.vhdl_code = '''
-#CLOCK_SOURCE_CLOCKGEN: process is
-#begin
-#$clock <= '%d';
-#while True loop
-#    wait for $even_period ns;
-#    $clock <= not $clock;
-#    wait for $odd_period ns;
-#    $clock <= not $clock;
-#end loop;
-#wait;
-#end process CLOCK_SOURCE_CLOCKGEN;
-#''' % (start_val,)
-#
-#    clock.driven = 'reg'
+    clock_source.verilog_code = '''
+initial begin: CLOCK_SOURCE_CLOCKGEN_$inst_count
+    while (1'b1) begin
+        # $even_period;
+        $clock <= (!$clock_state);
+        $clock_state <= (!$clock_state);
+        # $odd_period;
+        $clock <= (!$clock_state);
+        $clock_state <= (!$clock_state);
+    end
+end
+'''
+
+    clock_source.vhdl_code = '''
+CLOCK_SOURCE_CLOCKGEN_$inst_count: process is
+begin
+while True loop
+    wait for $even_period $time_units;
+    $clock <= not $clock_state;
+    $clock_state <= not $clock_state;
+    wait for $odd_period $time_units;
+    $clock <= not $clock_state;
+    $clock_state <= not $clock_state;
+end loop;
+wait;
+end process CLOCK_SOURCE_CLOCKGEN_$inst_count;
+'''
+
+    # These are required so myhdl knows to create the clock and clock_state
+    # signals
+    clock.driven = 'reg'
+    clock_state.driven = 'reg'
+
+    # This tells myhdl that clock_state is read within the verilog and vhdl
+    # code
+    clock_state.read = True
 
     return clockgen
 

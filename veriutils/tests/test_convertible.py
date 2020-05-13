@@ -19,11 +19,17 @@ def _conversion_test(
     of the data generated, and then converts the result to
     '''
 
+    try:
+        vcd_name = kwargs['vcd_name']
+        del kwargs['vcd_name']
+    except KeyError:
+        vcd_name = None
+
     sim_object = SynchronousTest(dut_factory, ref_factory, args, arg_types,
                                  custom_sources=custom_sources, **kwargs)
 
     # We need to create the test data
-    myhdl_outputs = sim_object.cosimulate(cycles)
+    myhdl_outputs = sim_object.cosimulate(cycles, vcd_name=vcd_name)
 
     tmp_dir = tempfile.mkdtemp()
 
