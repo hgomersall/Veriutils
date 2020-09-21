@@ -1,5 +1,5 @@
 from veriutils.tests.base_hdl_test import HDLTestCase, TestCase
-from veriutils.hdl_blocks import copy_signal
+from veriutils.hdl_blocks import copy_signal, AVAILABLE_TIME_UNITS
 
 from kea.axi import (
     AxiStreamInterface, AxiStreamSlaveBFM, AxiStreamMasterBFM,
@@ -1637,7 +1637,19 @@ class CosimulationTestMixin(object):
             # The messing should have made no difference to the sim result.
             self.assertEqual(ref_results[signal], ref_results2[signal])
 
+    def test_invalid_time_unit(self):
+        '''Passing something that is not a time unit should raise a ValueError
+        '''
+        invalid_time_unit = 'A string'
 
+        self.assertRaisesRegex(
+            ValueError,
+            ('Invalid time unit. Please select from: ' +
+             ', '.join(AVAILABLE_TIME_UNITS)),
+            self.construct_and_simulate, 30,
+            self.identity_factory, self.identity_factory,
+            self.default_args, self.default_arg_types,
+            time_units=invalid_time_unit)
 
     def test_dut_factory_returning_invalid_raises(self):
         '''If the dut factory returns something invalid, a
