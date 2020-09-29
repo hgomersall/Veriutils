@@ -5,3 +5,4 @@ dist
 htmlcov
 .coverage
 *~
+Veriutils.egg-info/

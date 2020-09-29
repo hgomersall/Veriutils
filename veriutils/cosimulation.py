@@ -37,7 +37,7 @@ if PY3:
 else:
     string_type = basestring
 
-if sys.version_info <= (3, 7):
+if sys.version_info < (3, 8):
     # We need to patch python pre 3.7 so it can deep copy objects with regular
     # expressions.
     # See https://stackoverflow.com/a/56935186
