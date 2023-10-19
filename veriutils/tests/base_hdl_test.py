@@ -3,7 +3,7 @@ import unittest
 from random import randrange
 from myhdl import Signal, intbv
 
-from mock import patch, call
+from unittest.mock import patch, call
 
 def get_signed_intbv_rand_signal(width, val_range=None, init_value=0):
     '''Create a signed intbv random signal.

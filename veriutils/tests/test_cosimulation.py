@@ -19,7 +19,7 @@ import os
 import tempfile
 import shutil
 
-import mock
+from unittest import mock
 
 from veriutils import SynchronousTest, myhdl_cosimulation, random_source
 
@@ -781,7 +781,6 @@ class CosimulationTestMixin(object):
         '''
 
         seed = random.randrange(0, 2**32)
-        print(seed)
         random.seed(seed)
         self.clock = Signal(bool(1))
 
