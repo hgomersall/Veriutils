@@ -96,7 +96,7 @@ def _get_globals_signal_name(name):
             raise KeyError('Could not find local signal in the global '
                            'quasi-namespace. This is likely a Veriutils bug.')
 
-    modifed_name = containing_dict[name]
+    modified_name = containing_dict[name]
 
     return modified_name
 
