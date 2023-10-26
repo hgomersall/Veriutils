@@ -320,7 +320,7 @@ initial begin: write_to_file_%s
 
     while (1'b1) begin
         @(posedge $clock) begin
-            $%s = 1;
+            $%s <= 1;
 
             if ($%s & $%s) begin
                 %s
